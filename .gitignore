@@ -43,14 +43,20 @@ Thumbs.db
 
 # Logs
 *.log
+logs/
+*.log.*
 
 # Local config
 .env
 .env.local
+.env.production
 
 # Database
 *.db
+*.sqlite
 *.sqlite3
+*.sql
+*.dump
 
 # Qodo
 .qodo/
@@ -58,3 +64,68 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+*.bak
+*.cache
+tmp/
+temp/
+
+# XBRL files uploaded
+uploads/
+xbrl_files/
+
+# PDF/Excel exports
+exports/
+reports/
+
+# Alembic
+alembic/versions/*.py
+!alembic/versions/__init__.py
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+test_*.py
+*_test.py
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# Pycharm
+.idea/

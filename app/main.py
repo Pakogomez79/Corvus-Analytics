@@ -16,14 +16,17 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import or_
 from sqlalchemy.orm import joinedload
 from xhtml2pdf import pisa
-import logging
 
 from .canonical_mapping import resolve_canonical_concept
 from .db import SessionLocal, engine
 from .ingest_arelle import parse_xbrl
+from .logger import get_logger, setup_application_logging
 from .models import Base, Entity, File as FileModel, Fact, Period
 from .pdf_config import PDF_OPTIONS, get_pdfkit_config
 from .schemas import FileResponse
+
+# Setup application logging
+logger = setup_application_logging()
 
 BASE_DIR = Path(__file__).resolve().parent
 TEMPLATES = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -31,7 +34,6 @@ TEMPLATES = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 app = FastAPI(title="Corvus Analytics XBRL")
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 Base.metadata.create_all(bind=engine)
-logger = logging.getLogger(__name__)
 
 
 def get_db():

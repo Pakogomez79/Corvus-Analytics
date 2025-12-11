@@ -9,5 +9,35 @@ xhtml2pdf>=0.2.15
 pymysql>=1.1.1
 sqlalchemy>=2.0.36
 alembic>=1.13.2
+
 # Arelle headless for XBRL parsing
 arelle-release>=2.25.0
+
+# Authentication & Security
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+python-dotenv>=1.0.0
+bcrypt>=4.1.2
+
+# Email support (for password recovery)
+fastapi-mail>=1.4.1
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+httpx>=0.24.0
+
+# Code quality
+black>=23.0.0
+flake8>=6.0.0
+mypy>=1.5.0
+
+# SQL Server support (optional)
+pyodbc>=5.0.0
+
+# Additional utilities
+python-dateutil>=2.8.2
+xlsxwriter>=3.1.9
+
+# JSON logging (optional)
+python-json-logger>=2.0.7
