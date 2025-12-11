@@ -14,6 +14,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import or_
+from sqlalchemy.orm import joinedload
 from xhtml2pdf import pisa
 import logging
 
@@ -121,8 +122,95 @@ def _rows_to_dataframe(rows: List[dict]) -> pd.DataFrame:
 
 
 @app.get("/", response_class=HTMLResponse)
-def home(request: Request) -> HTMLResponse:
-    return TEMPLATES.TemplateResponse("home.html", {"request": request})
+def home(request: Request, db=Depends(get_db)) -> HTMLResponse:
+    # Estadísticas para el dashboard
+    total_entidades = db.query(Entity).count()
+    total_archivos = db.query(FileModel).count()
+    total_hechos = db.query(Fact).count()
+    
+    # Archivos recientes
+    archivos_recientes_query = (
+        db.query(
+            FileModel.filename,
+            FileModel.taxonomy,
+            FileModel.created_at,
+            Entity.name.label("entidad"),
+            Period.start.label("period_start"),
+            Period.end.label("period_end"),
+        )
+        .outerjoin(Entity, FileModel.entity)
+        .outerjoin(Period, FileModel.period)
+        .order_by(FileModel.created_at.desc())
+        .limit(5)
+        .all()
+    )
+    
+    archivos_recientes = []
+    for archivo in archivos_recientes_query:
+        periodo = _format_period(archivo.period_start, archivo.period_end)
+        # Contar hechos por archivo
+        total_hechos_archivo = db.query(Fact).filter(Fact.file_id == FileModel.id).count() if hasattr(archivo, 'id') else 0
+        archivos_recientes.append({
+            "filename": archivo.filename,
+            "entidad": archivo.entidad or "N/A",
+            "periodo": periodo,
+            "taxonomy": archivo.taxonomy,
+            "total_hechos": total_hechos_archivo,
+            "created_at": archivo.created_at.strftime("%Y-%m-%d %H:%M") if archivo.created_at else "N/A",
+        })
+    
+    stats = {
+        "total_entidades": total_entidades,
+        "total_archivos": total_archivos,
+        "total_hechos": total_hechos,
+        "alertas_activas": 0,
+        "nuevas_entidades": 0,
+        "archivos_mes": 0,
+    }
+    
+    return TEMPLATES.TemplateResponse(
+        "dashboard.html",
+        {
+            "request": request,
+            "active_page": "dashboard",
+            "stats": stats,
+            "archivos_recientes": archivos_recientes,
+            "archivos_por_mes": [0] * 12,
+            "sectores_labels": ["Bancos", "Seguros", "Otros"],
+            "sectores_data": [40, 35, 25],
+        },
+    )
+
+
+@app.get("/upload", response_class=HTMLResponse)
+def upload_page(request: Request) -> HTMLResponse:
+    return TEMPLATES.TemplateResponse(
+        "upload.html",
+        {"request": request, "active_page": "upload"},
+    )
+
+
+@app.get("/entidades", response_class=HTMLResponse)
+def entidades_page(request: Request, db=Depends(get_db)) -> HTMLResponse:
+    entities = db.query(Entity).order_by(Entity.name).all()
+    return TEMPLATES.TemplateResponse(
+        "entidades.html",
+        {"request": request, "active_page": "entidades", "entities": entities},
+    )
+
+
+@app.get("/archivos", response_class=HTMLResponse)
+def archivos_page(request: Request, db=Depends(get_db)) -> HTMLResponse:
+    archivos = (
+        db.query(FileModel)
+        .options(joinedload(FileModel.entity))
+        .order_by(FileModel.created_at.desc())
+        .all()
+    )
+    return TEMPLATES.TemplateResponse(
+        "archivos.html",
+        {"request": request, "active_page": "archivos", "archivos": archivos},
+    )
 
 
 @app.get("/comparativos", response_class=HTMLResponse)
@@ -137,7 +225,7 @@ def comparativos(
     rows = _fetch_comparativos_rows(db, entidad, concepto, period_start, period_end)
     return TEMPLATES.TemplateResponse(
         "comparativos.html",
-        {"request": request, "rows": rows},
+        {"request": request, "rows": rows, "active_page": "comparativos"},
     )
 
 

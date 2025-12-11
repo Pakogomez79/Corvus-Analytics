@@ -1,0 +1,274 @@
+{% extends "layout.html" %}
+
+{% block title %}Dashboard - Corvus XBRL{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+{% block breadcrumb %}Dashboard{% endblock %}
+
+{% block content %}
+<!-- Stats Cards -->
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="stat-icon primary">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+      </svg>
+    </div>
+    <div class="stat-content">
+      <div class="stat-value">{{ stats.total_entidades if stats else 0 }}</div>
+      <div class="stat-label">Entidades</div>
+      <div class="stat-trend up">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18" />
+        </svg>
+        +{{ stats.nuevas_entidades if stats else 0 }} este mes
+      </div>
+    </div>
+  </div>
+  
+  <div class="stat-card">
+    <div class="stat-icon info">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+      </svg>
+    </div>
+    <div class="stat-content">
+      <div class="stat-value">{{ stats.total_archivos if stats else 0 }}</div>
+      <div class="stat-label">Archivos XBRL</div>
+      <div class="stat-trend up">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18" />
+        </svg>
+        +{{ stats.archivos_mes if stats else 0 }} este mes
+      </div>
+    </div>
+  </div>
+  
+  <div class="stat-card">
+    <div class="stat-icon success">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+      </svg>
+    </div>
+    <div class="stat-content">
+      <div class="stat-value">{{ stats.total_hechos if stats else 0 | default('0') }}</div>
+      <div class="stat-label">Hechos Registrados</div>
+    </div>
+  </div>
+  
+  <div class="stat-card">
+    <div class="stat-icon warning">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+      </svg>
+    </div>
+    <div class="stat-content">
+      <div class="stat-value">{{ stats.alertas_activas if stats else 0 }}</div>
+      <div class="stat-label">Alertas Activas</div>
+      <div class="stat-trend down" style="color: var(--warning);">
+        Requieren atención
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Charts Row -->
+<div class="charts-grid">
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <h3 class="card-title">Archivos Cargados por Mes</h3>
+        <p class="card-subtitle">Últimos 12 meses</p>
+      </div>
+      <div style="display: flex; gap: 1rem; align-items: center;">
+        <span style="display: flex; align-items: center; gap: 0.25rem; font-size: 0.8125rem;">
+          <span style="width: 12px; height: 12px; background: #1e3a5f; border-radius: 2px;"></span>
+          Archivos
+        </span>
+      </div>
+    </div>
+    <div class="chart-container">
+      <canvas id="archivosChart"></canvas>
+    </div>
+  </div>
+  
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <h3 class="card-title">Entidades por Sector</h3>
+        <p class="card-subtitle">Distribución actual</p>
+      </div>
+    </div>
+    <div class="chart-container">
+      <canvas id="sectoresChart"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- Recent Files -->
+<div class="card">
+  <div class="card-header">
+    <div>
+      <h3 class="card-title">Últimos Archivos Cargados</h3>
+      <p class="card-subtitle">Archivos XBRL más recientes</p>
+    </div>
+    <a href="/archivos" class="btn btn-secondary">Ver todos</a>
+  </div>
+  <div class="table-container">
+    <table>
+      <thead>
+        <tr>
+          <th>Archivo</th>
+          <th>Entidad</th>
+          <th>Período</th>
+          <th>Taxonomía</th>
+          <th>Hechos</th>
+          <th>Fecha Carga</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if archivos_recientes %}
+          {% for archivo in archivos_recientes %}
+          <tr>
+            <td>{{ archivo.filename }}</td>
+            <td>{{ archivo.entidad }}</td>
+            <td>{{ archivo.periodo }}</td>
+            <td>{{ archivo.taxonomy or 'N/A' }}</td>
+            <td>{{ archivo.total_hechos }}</td>
+            <td>{{ archivo.created_at }}</td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="6" style="text-align: center; color: var(--text-secondary); padding: 2rem;">
+              No hay archivos cargados aún. 
+              <a href="/upload" style="color: var(--corvus-accent);">Cargar primer archivo</a>
+            </td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Quick Actions -->
+<div class="stats-grid" style="margin-top: 1.5rem;">
+  <a href="/upload" class="stat-card" style="text-decoration: none; cursor: pointer;">
+    <div class="stat-icon primary">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+      </svg>
+    </div>
+    <div class="stat-content">
+      <div class="stat-value" style="font-size: 1.125rem;">Cargar XBRL</div>
+      <div class="stat-label">Subir nuevo archivo</div>
+    </div>
+  </a>
+  
+  <a href="/comparativos" class="stat-card" style="text-decoration: none; cursor: pointer;">
+    <div class="stat-icon info">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+      </svg>
+    </div>
+    <div class="stat-content">
+      <div class="stat-value" style="font-size: 1.125rem;">Comparativos</div>
+      <div class="stat-label">Analizar datos</div>
+    </div>
+  </a>
+  
+  <a href="/indicadores" class="stat-card" style="text-decoration: none; cursor: pointer;">
+    <div class="stat-icon success">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
+      </svg>
+    </div>
+    <div class="stat-content">
+      <div class="stat-value" style="font-size: 1.125rem;">Indicadores</div>
+      <div class="stat-label">ROE, ROA, Liquidez</div>
+    </div>
+  </a>
+  
+  <a href="/alertas" class="stat-card" style="text-decoration: none; cursor: pointer;">
+    <div class="stat-icon warning">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+      </svg>
+    </div>
+    <div class="stat-content">
+      <div class="stat-value" style="font-size: 1.125rem;">Alertas</div>
+      <div class="stat-label">Revisar notificaciones</div>
+    </div>
+  </a>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // Gráfico de barras - Archivos por mes
+  const archivosCtx = document.getElementById('archivosChart').getContext('2d');
+  new Chart(archivosCtx, {
+    type: 'bar',
+    data: {
+      labels: ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'],
+      datasets: [{
+        label: 'Archivos',
+        data: {{ archivos_por_mes | default([0,0,0,0,0,0,0,0,0,0,0,0]) | tojson }},
+        backgroundColor: 'rgba(30, 58, 95, 0.8)',
+        borderColor: '#1e3a5f',
+        borderWidth: 1,
+        borderRadius: 4,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: { stepSize: 1 }
+        }
+      }
+    }
+  });
+  
+  // Gráfico de dona - Sectores
+  const sectoresCtx = document.getElementById('sectoresChart').getContext('2d');
+  new Chart(sectoresCtx, {
+    type: 'doughnut',
+    data: {
+      labels: {{ sectores_labels | default(['Bancos', 'Seguros', 'Otros']) | tojson }},
+      datasets: [{
+        data: {{ sectores_data | default([40, 35, 25]) | tojson }},
+        backgroundColor: [
+          '#1e3a5f',
+          '#00bcd4',
+          '#4dd0e1',
+          '#2d5a87',
+          '#0d1f33'
+        ],
+        borderWidth: 0,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: {
+            padding: 20,
+            usePointStyle: true,
+          }
+        }
+      },
+      cutout: '65%'
+    }
+  });
+});
+</script>
+{% endblock %}

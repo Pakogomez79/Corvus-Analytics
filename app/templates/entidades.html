@@ -1,0 +1,104 @@
+{% extends "layout.html" %}
+
+{% block title %}Entidades - Corvus XBRL{% endblock %}
+{% block page_title %}Entidades Registradas{% endblock %}
+
+{% block breadcrumb %}
+<a href="/">Inicio</a> / <a href="/entidades">XBRL</a> / <span>Entidades</span>
+{% endblock %}
+
+{% block content %}
+<!-- Estadísticas -->
+<div class="stats-grid" style="margin-bottom: 1.5rem;">
+  <div class="stat-card">
+    <div class="stat-icon" style="background: linear-gradient(135deg, var(--corvus-primary), var(--corvus-primary-light));">
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+      </svg>
+    </div>
+    <div class="stat-content">
+      <div class="stat-value">{{ entities|length }}</div>
+      <div class="stat-label">Total Entidades</div>
+    </div>
+  </div>
+</div>
+
+<!-- Tabla de Entidades -->
+<div class="card">
+  <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+    <h3 class="card-title">
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 0.5rem;">
+        <path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+      </svg>
+      Listado de Entidades
+    </h3>
+    <div>
+      <a href="/upload" class="btn btn-primary" style="font-size: 0.85rem;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="12" y1="5" x2="12" y2="19"></line>
+          <line x1="5" y1="12" x2="19" y2="12"></line>
+        </svg>
+        Nueva Entidad
+      </a>
+    </div>
+  </div>
+  <div class="card-body" style="padding: 0;">
+    <div class="table-responsive">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Nombre</th>
+            <th>Identificador (NIT/RUC)</th>
+            <th>Sector</th>
+            <th style="text-align: center;">Archivos</th>
+            <th style="text-align: center;">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if entities %}
+            {% for entity in entities %}
+            <tr>
+              <td>{{ entity.id }}</td>
+              <td>
+                <span style="font-weight: 500;">{{ entity.name }}</span>
+              </td>
+              <td>
+                <code style="font-size: 0.85rem; background: var(--corvus-bg-dark); padding: 0.15rem 0.5rem; border-radius: 4px;">
+                  {{ entity.identifier }}
+                </code>
+              </td>
+              <td>{{ entity.sector or 'N/A' }}</td>
+              <td style="text-align: center;">
+                <span class="badge" style="background: var(--corvus-accent); color: white; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem;">
+                  {{ entity.files|length if entity.files else 0 }}
+                </span>
+              </td>
+              <td style="text-align: center;">
+                <a href="/archivos?entidad={{ entity.name }}" class="btn btn-secondary" style="font-size: 0.75rem; padding: 0.35rem 0.75rem;">
+                  Ver Archivos
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="6" style="text-align: center; padding: 3rem;">
+                <div style="color: var(--corvus-text-muted);">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" style="margin-bottom: 1rem; opacity: 0.5;">
+                    <path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+                  </svg>
+                  <p style="margin: 0; font-size: 1.1rem;">No hay entidades registradas</p>
+                  <p style="margin: 0.5rem 0 0; font-size: 0.9rem;">
+                    <a href="/upload">Carga un archivo XBRL</a> para registrar una entidad automáticamente
+                  </p>
+                </div>
+              </td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

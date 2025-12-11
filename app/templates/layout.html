@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}Corvus XBRL{% endblock %}</title>
+  
+  <!-- CSS -->
+  <link rel="stylesheet" href="/static/css/corvus.css">
+  
+  <!-- Alpine.js -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  
+  <!-- HTMX -->
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  
+  {% block head %}{% endblock %}
+</head>
+<body x-data="{ sidebarOpen: true }">
+  <div class="app-container">
+    
+    <!-- ========== SIDEBAR ========== -->
+    <aside class="app-sidebar" :class="{ 'open': sidebarOpen }">
+      <div class="sidebar-header">
+        <svg class="sidebar-logo" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="20" cy="20" r="18" fill="url(#logoGrad)"/>
+          <path d="M12 20C12 15.5 15.5 12 20 12C22.5 12 24.7 13.2 26.2 15L20 20L26.2 25C24.7 26.8 22.5 28 20 28C15.5 28 12 24.5 12 20Z" fill="white"/>
+          <defs>
+            <linearGradient id="logoGrad" x1="0" y1="0" x2="40" y2="40">
+              <stop offset="0%" stop-color="#00bcd4"/>
+              <stop offset="100%" stop-color="#1e3a5f"/>
+            </linearGradient>
+          </defs>
+        </svg>
+        <div class="sidebar-brand">
+          <span class="sidebar-brand-name">Corvus XBRL</span>
+          <span class="sidebar-brand-tagline">Enterprise</span>
+        </div>
+      </div>
+      
+      <div class="sidebar-user">
+        <div class="sidebar-user-avatar">
+          {{ current_user.initials if current_user else 'US' }}
+        </div>
+        <div class="sidebar-user-info">
+          <div class="sidebar-user-name">{{ current_user.name if current_user else 'Usuario' }}</div>
+          <div class="sidebar-user-email">{{ current_user.email if current_user else 'usuario@empresa.com' }}</div>
+        </div>
+      </div>
+      
+      <nav class="sidebar-nav">
+        <!-- PRINCIPAL -->
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">Principal</div>
+          <ul class="sidebar-menu">
+            <li class="sidebar-menu-item">
+              <a href="/" class="sidebar-menu-link {% if active_page == 'dashboard' %}active{% endif %}">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                </svg>
+                Dashboard
+              </a>
+            </li>
+          </ul>
+        </div>
+        
+        <!-- XBRL -->
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">XBRL</div>
+          <ul class="sidebar-menu">
+            <li class="sidebar-menu-item">
+              <a href="/upload" class="sidebar-menu-link {% if active_page == 'upload' %}active{% endif %}">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                Cargar Archivo
+              </a>
+            </li>
+            <li class="sidebar-menu-item">
+              <a href="/entidades" class="sidebar-menu-link {% if active_page == 'entidades' %}active{% endif %}">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                </svg>
+                Entidades
+              </a>
+            </li>
+            <li class="sidebar-menu-item">
+              <a href="/archivos" class="sidebar-menu-link {% if active_page == 'archivos' %}active{% endif %}">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                </svg>
+                Archivos
+              </a>
+            </li>
+          </ul>
+        </div>
+        
+        <!-- REPORTES -->
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">Reportes</div>
+          <ul class="sidebar-menu">
+            <li class="sidebar-menu-item">
+              <a href="/comparativos" class="sidebar-menu-link {% if active_page == 'comparativos' %}active{% endif %}">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+                Comparativos
+              </a>
+            </li>
+            <li class="sidebar-menu-item">
+              <a href="/balance" class="sidebar-menu-link {% if active_page == 'balance' %}active{% endif %}">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                </svg>
+                Balance General
+              </a>
+            </li>
+            <li class="sidebar-menu-item">
+              <a href="/resultados" class="sidebar-menu-link {% if active_page == 'resultados' %}active{% endif %}">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                </svg>
+                Estado de Resultados
+              </a>
+            </li>
+            <li class="sidebar-menu-item">
+              <a href="/indicadores" class="sidebar-menu-link {% if active_page == 'indicadores' %}active{% endif %}">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
+                </svg>
+                Indicadores
+              </a>
+            </li>
+          </ul>
+        </div>
+        
+        <!-- ALERTAS -->
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">Monitoreo</div>
+          <ul class="sidebar-menu">
+            <li class="sidebar-menu-item">
+              <a href="/alertas" class="sidebar-menu-link {% if active_page == 'alertas' %}active{% endif %}">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                </svg>
+                Alertas
+                <span class="badge">3</span>
+              </a>
+            </li>
+          </ul>
+        </div>
+        
+        <!-- ADMINISTRACIÓN -->
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">Administración</div>
+          <ul class="sidebar-menu">
+            <li class="sidebar-menu-item">
+              <a href="/usuarios" class="sidebar-menu-link {% if active_page == 'usuarios' %}active{% endif %}">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                </svg>
+                Usuarios
+              </a>
+            </li>
+            <li class="sidebar-menu-item">
+              <a href="/auditoria" class="sidebar-menu-link {% if active_page == 'auditoria' %}active{% endif %}">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Auditoría
+              </a>
+            </li>
+            <li class="sidebar-menu-item">
+              <a href="/configuracion" class="sidebar-menu-link {% if active_page == 'configuracion' %}active{% endif %}">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                Configuración
+              </a>
+            </li>
+          </ul>
+        </div>
+      </nav>
+    </aside>
+    
+    <!-- ========== HEADER ========== -->
+    <header class="app-header">
+      <div class="header-left">
+        <button class="header-icon-btn" @click="sidebarOpen = !sidebarOpen" title="Toggle menu">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
+        <div>
+          <h1 class="header-title">{% block page_title %}Dashboard{% endblock %}</h1>
+          <nav class="header-breadcrumb">
+            <a href="/">Inicio</a> &gt; {% block breadcrumb %}Dashboard{% endblock %}
+          </nav>
+        </div>
+      </div>
+      
+      <div class="header-right">
+        <div class="header-search">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input type="search" placeholder="Buscar entidad, archivo..." />
+        </div>
+        
+        <button class="header-icon-btn" title="Notificaciones">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+          </svg>
+          <span class="badge">3</span>
+        </button>
+        
+        <div class="header-user">
+          <div class="header-user-avatar">
+            {{ current_user.initials if current_user else 'US' }}
+          </div>
+          <div class="header-user-info">
+            <span class="header-user-name">{{ current_user.name if current_user else 'Usuario' }}</span>
+            <span class="header-user-role">{{ current_user.role if current_user else 'Analista' }}</span>
+          </div>
+        </div>
+      </div>
+    </header>
+    
+    <!-- ========== MAIN CONTENT ========== -->
+    <main class="app-main">
+      {% block content %}{% endblock %}
+    </main>
+    
+  </div>
+  
+  {% block scripts %}{% endblock %}
+</body>
+</html>
