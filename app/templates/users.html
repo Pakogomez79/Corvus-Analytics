@@ -1,0 +1,101 @@
+{% extends "layout.html" %}
+
+{% block title %}Usuarios - Corvus International Group{% endblock %}
+{% block page_title %}Usuarios{% endblock %}
+{% block breadcrumb %}Administración &gt; Usuarios{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <div>
+      <h3 class="card-title">Listado de Usuarios</h3>
+      <p class="card-subtitle">Usuarios del sistema</p>
+    </div>
+    <div style="display:flex; gap:1rem; align-items:center;">
+      <form method="get" action="/users" style="display:flex; gap:0.75rem; align-items:center;">
+        <input type="search" name="q" placeholder="Buscar usuario..." value="{{ q }}" style="padding:0.5rem 0.75rem; border:1px solid #e2e8f0; border-radius:6px;" />
+        <button class="btn btn-secondary" type="submit">Buscar</button>
+      </form>
+      <a href="/users/create" class="btn btn-accent">Crear Usuario</a>
+    </div>
+  </div>
+
+  <div class="table-container">
+    <table class="table">
+      <thead>
+        <tr>
+          <th style="width: 40px;"><input type="checkbox" onclick="document.querySelectorAll('.user-check').forEach(c => c.checked = this.checked)" /></th>
+          <th>Nombre</th>
+          <th>Usuario</th>
+          <th>Teléfono</th>
+          <th>Roles</th>
+          <th>Activo</th>
+          <th>Obligar cambio</th>
+          <th>Acción</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if users %}
+          {% for u in users %}
+          <tr>
+            <td><input type="checkbox" class="user-check" value="{{ u.id }}" /></td>
+            <td>
+              <div style="display:flex; flex-direction:column;">
+                <strong>{{ u.first_name or '' }} {{ u.last_name or '' }}</strong>
+                <small style="color:var(--text-secondary);">{{ u.username }}</small>
+              </div>
+            </td>
+            <td style="color:var(--text-secondary);">{{ u.username }}</td>
+            <td style="color:var(--text-secondary);">{{ u.phone or '-' }}</td>
+            <td>{{ u.roles or '-' }}</td>
+            <td>{{ 'Sí' if u.is_active else 'No' }}</td>
+            <td>{{ 'Sí' if u.must_change_password else 'No' }}</td>
+            <td>
+              <a href="/users/{{ u.id }}/edit" title="Editar" style="margin-right:0.5rem;">✏️</a>
+              <form method="post" action="/users/{{ u.id }}/delete" style="display:inline;" onsubmit="return confirm('Eliminar usuario?');">
+                <button type="submit" class="btn btn-outline" style="padding:0.25rem 0.5rem;">🗑️</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="6" style="text-align:center; padding:2rem; color:var(--text-secondary);">No hay usuarios</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Pagination -->
+  <div style="display:flex; justify-content:space-between; align-items:center; padding-top:0.75rem;">
+    <div style="color:var(--text-secondary);">Mostrando {{ (page - 1) * per_page + 1 }} - {{ (page - 1) * per_page + users|length }} de {{ total }}</div>
+    <div>
+      <nav aria-label="Paginación">
+        <ul style="display:flex; gap:0.5rem; list-style:none; padding:0; margin:0;">
+          {% if page > 1 %}
+          <li><a class="btn btn-outline" href="/users?page={{ page - 1 }}{% if q %}&q={{ q }}{% endif %}">Anterior</a></li>
+          {% else %}
+          <li><button class="btn btn-outline" disabled>Anterior</button></li>
+          {% endif %}
+
+          {% for p in range(1, pages + 1) %}
+            {% if p == page %}
+              <li><button class="btn btn-primary" disabled>{{ p }}</button></li>
+            {% else %}
+              <li><a class="btn btn-secondary" href="/users?page={{ p }}{% if q %}&q={{ q }}{% endif %}">{{ p }}</a></li>
+            {% endif %}
+          {% endfor %}
+
+          {% if page < pages %}
+          <li><a class="btn btn-outline" href="/users?page={{ page + 1 }}{% if q %}&q={{ q }}{% endif %}">Siguiente</a></li>
+          {% else %}
+          <li><button class="btn btn-outline" disabled>Siguiente</button></li>
+          {% endif %}
+        </ul>
+      </nav>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

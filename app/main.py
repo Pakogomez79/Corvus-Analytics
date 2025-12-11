@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import io
 import tempfile
 from datetime import date, timedelta
@@ -11,18 +9,19 @@ import pandas as pd
 import pdfkit
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile, Cookie
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import or_
 from sqlalchemy.orm import joinedload
 from xhtml2pdf import pisa
 
-from .auth import authenticate_user, create_access_token, decode_token, change_password, validate_password_strength
+from .auth import authenticate_user, create_access_token, decode_token, change_password, validate_password_strength, create_user, get_password_hash, has_permission
 from .canonical_mapping import resolve_canonical_concept
 from .db import SessionLocal, engine
 from .ingest_arelle import parse_xbrl
 from .logger import get_logger, setup_application_logging
-from .models import Base, Entity, File as FileModel, Fact, Period
+from .models import Base, Entity, File as FileModel, Fact, Period, User, Role, UserRole
 from .pdf_config import PDF_OPTIONS, get_pdfkit_config
 from .schemas import FileResponse
 
@@ -32,6 +31,7 @@ logger = setup_application_logging()
 BASE_DIR = Path(__file__).resolve().parent
 TEMPLATES = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
+# Instancia de FastAPI y configuración
 app = FastAPI(title="Corvus International Group")
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 Base.metadata.create_all(bind=engine)
@@ -72,19 +72,44 @@ def get_current_user(
     return payload
 
 
+def require_permission(permission_name: str):
+    """Dependency generator that checks if current user has the required permission.
+    Returns a FastAPI dependency that raises 403 or redirects to login.
+    """
+    def _require(current_user: Optional[dict] = Depends(get_current_user), db=Depends(get_db)):
+        if not current_user:
+            # No user -> redirect to login
+            return RedirectResponse(url="/login", status_code=303)
+        user_id = current_user.get("user_id")
+        if not has_permission(db, user_id, permission_name):
+            raise HTTPException(status_code=403, detail="Acceso denegado")
+        return True
+    return _require
+
+
 # ============================================================================
 # RUTAS DE AUTENTICACIÓN
 # ============================================================================
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request, error: Optional[str] = None):
-    """Muestra la página de login"""
-    return TEMPLATES.TemplateResponse("login.html", {
+    """Muestra la página de login y fuerza no-cache"""
+    response = TEMPLATES.TemplateResponse("login.html", {
         "request": request,
         "error": error
     })
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
+@app.get("/api/session")
+def api_session(current_user: Optional[dict] = Depends(get_current_user)):
+    """Endpoint que valida si la sesión es válida (usa cookie HttpOnly)."""
+    if not current_user:
+        return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
+    return JSONResponse(status_code=200, content={"ok": True})
 @app.post("/login", response_class=HTMLResponse)
 async def login(
     request: Request,
@@ -113,8 +138,8 @@ async def login(
     
     logger.info(f"Login exitoso para usuario: {username}")
     
-    # Redirigir al dashboard con el token en cookie
-    response = RedirectResponse(url="/", status_code=303)
+    # Redirigir explícitamente al dashboard con el token en cookie
+    response = RedirectResponse(url="/dashboard", status_code=303)
     response.set_cookie(
         key="access_token",
         value=f"Bearer {access_token}",
@@ -128,10 +153,13 @@ async def login(
 
 @app.get("/logout")
 async def logout(request: Request):
-    """Cierra la sesión del usuario eliminando el token"""
+    """Cierra la sesión del usuario eliminando el token y fuerza no-cache"""
     logger.info("Usuario cerró sesión")
     response = RedirectResponse(url="/login", status_code=303)
     response.delete_cookie(key="access_token")
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
     return response
 
 
@@ -144,13 +172,21 @@ async def change_password_page(
 ):
     """Muestra la página para cambiar contraseña"""
     if not current_user:
-        return RedirectResponse(url="/login", status_code=303)
+        response = RedirectResponse(url="/login", status_code=303)
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
     
-    return TEMPLATES.TemplateResponse("change_password.html", {
+    response = TEMPLATES.TemplateResponse("change_password.html", {
         "request": request,
         "error": error,
         "success": success
     })
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 @app.post("/change-password", response_class=HTMLResponse)
@@ -164,22 +200,34 @@ async def change_password_submit(
 ):
     """Procesa el cambio de contraseña"""
     if not current_user:
-        return RedirectResponse(url="/login", status_code=303)
+        response = RedirectResponse(url="/login", status_code=303)
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
     
     # Validar que las nuevas contraseñas coincidan
     if new_password != confirm_password:
-        return TEMPLATES.TemplateResponse("change_password.html", {
+        response = TEMPLATES.TemplateResponse("change_password.html", {
             "request": request,
             "error": "Las contraseñas nuevas no coinciden"
         }, status_code=400)
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
     
     # Validar fortaleza de la contraseña
     is_valid, message = validate_password_strength(new_password)
     if not is_valid:
-        return TEMPLATES.TemplateResponse("change_password.html", {
+        response = TEMPLATES.TemplateResponse("change_password.html", {
             "request": request,
             "error": message
         }, status_code=400)
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
     
     # Cambiar contraseña
     user_id = current_user.get("user_id")
@@ -187,15 +235,23 @@ async def change_password_submit(
     
     if success:
         logger.info(f"Contraseña cambiada para usuario ID: {user_id}")
-        return TEMPLATES.TemplateResponse("change_password.html", {
-            "request": request,
-            "success": "Contraseña cambiada exitosamente"
-        })
+        # Forzar re-login: eliminar cookie y redirigir a login
+        response = RedirectResponse(url="/login", status_code=303)
+        response.delete_cookie(key="access_token")
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+        
     else:
-        return TEMPLATES.TemplateResponse("change_password.html", {
+        response = TEMPLATES.TemplateResponse("change_password.html", {
             "request": request,
             "error": "Contraseña actual incorrecta"
         }, status_code=400)
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
 
 
 # ============================================================================
@@ -289,7 +345,11 @@ def home(
 ) -> HTMLResponse:
     # Verificar autenticación
     if not current_user:
-        return RedirectResponse(url="/login", status_code=303)
+        response = RedirectResponse(url="/login", status_code=303)
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
     
     # Estadísticas para el dashboard
     total_entidades = db.query(Entity).count()
@@ -336,7 +396,7 @@ def home(
         "archivos_mes": 0,
     }
     
-    return TEMPLATES.TemplateResponse(
+    response = TEMPLATES.TemplateResponse(
         "dashboard.html",
         {
             "request": request,
@@ -348,6 +408,330 @@ def home(
             "sectores_data": [40, 35, 25],
         },
     )
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+
+# ============================================================================
+# RUTAS DE GESTIÓN DE USUARIOS (CRUD)
+# ============================================================================
+
+
+def _require_admin(current_user: Optional[dict], db) -> bool:
+    if not current_user:
+        return False
+    user_id = current_user.get("user_id")
+    if not user_id:
+        return False
+    user = db.query(User).filter(User.id == user_id).options(joinedload(User.roles).joinedload(UserRole.role)).first()
+    if not user:
+        return False
+    for ur in user.roles:
+        if ur.role and ur.role.name == "admin":
+            return True
+    return False
+
+
+@app.get("/users", response_class=HTMLResponse)
+def users_page(
+    request: Request,
+    q: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    db=Depends(get_db),
+    permission_ok: bool = Depends(require_permission('users.view')),
+    current_user: Optional[dict] = Depends(get_current_user),
+):
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+
+    if not _require_admin(current_user, db):
+        return TEMPLATES.TemplateResponse("dashboard.html", {"request": request, "error": "Acceso denegado"}, status_code=403)
+
+    # Server-side search filter
+    query = db.query(User)
+    if q:
+        like_q = f"%{q}%"
+        query = query.filter(User.username.ilike(like_q))
+
+    total = query.count()
+    per_page = 10
+    pages = max(1, (total + per_page - 1) // per_page)
+    if page > pages:
+        page = pages
+
+    users = query.order_by(User.username).offset((page - 1) * per_page).limit(per_page).all()
+    users_data = []
+    for u in users:
+        roles = [ur.role.name for ur in u.roles if ur.role]
+        users_data.append({
+            "id": u.id,
+            "username": u.username,
+            "is_active": u.is_active,
+            "first_name": u.first_name,
+            "last_name": u.last_name,
+            "roles": ", ".join(roles),
+            "phone": u.phone,
+            "must_change_password": u.must_change_password,
+            "created_at": u.created_at.strftime("%Y-%m-%d %H:%M") if u.created_at else "N/A",
+        })
+
+    return TEMPLATES.TemplateResponse(
+        "users.html",
+        {
+            "request": request,
+            "users": users_data,
+            "active_page": "users",
+            "q": q or "",
+            "page": page,
+            "pages": pages,
+            "total": total,
+            "per_page": per_page,
+        },
+    )
+
+
+@app.get("/users/create", response_class=HTMLResponse)
+def users_create_page(request: Request, current_user: Optional[dict] = Depends(get_current_user), permission_ok: bool = Depends(require_permission('users.manage'))):
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+
+    return TEMPLATES.TemplateResponse("user_form.html", {"request": request, "action": "create", "user": None})
+
+
+@app.post("/users/create", response_class=HTMLResponse)
+def users_create_submit(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    first_name: Optional[str] = Form(None),
+    last_name: Optional[str] = Form(None),
+    phone: Optional[str] = Form(None),
+    must_change_password: Optional[bool] = Form(False),
+    is_active: Optional[bool] = Form(True),
+    roles: Optional[str] = Form(""),
+    db=Depends(get_db),
+    current_user: Optional[dict] = Depends(get_current_user),
+):
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+
+    # Sólo admin puede crear usuarios
+    if not _require_admin(current_user, db):
+        return TEMPLATES.TemplateResponse("dashboard.html", {"request": request, "error": "Acceso denegado"}, status_code=403)
+
+    # Crear usuario
+    try:
+        new_user = create_user(db=db, username=username, password=password, first_name=first_name, last_name=last_name, phone=phone, must_change_password=bool(must_change_password))
+        new_user.is_active = bool(is_active)
+
+        # Asignar roles (coma-separados)
+        role_names = [r.strip() for r in (roles or "").split(",") if r.strip()]
+        for rn in role_names:
+            role = db.query(Role).filter(Role.name == rn).first()
+            if not role:
+                role = Role(name=rn)
+                db.add(role)
+                db.commit()
+                db.refresh(role)
+            assoc = UserRole(user_id=new_user.id, role_id=role.id)
+            db.add(assoc)
+
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        return TEMPLATES.TemplateResponse("user_form.html", {"request": request, "action": "create", "error": str(e), "user": {"username": username, "is_active": is_active, "roles": roles}} , status_code=400)
+
+    return RedirectResponse(url="/users", status_code=303)
+
+
+@app.get("/users/{user_id}/edit", response_class=HTMLResponse)
+def users_edit_page(request: Request, user_id: int, current_user: Optional[dict] = Depends(get_current_user), db=Depends(get_db), permission_ok: bool = Depends(require_permission('users.manage'))):
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    if not _require_admin(current_user, db):
+        return TEMPLATES.TemplateResponse("dashboard.html", {"request": request, "error": "Acceso denegado"}, status_code=403)
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        return RedirectResponse(url="/users", status_code=303)
+
+    roles = ", ".join([ur.role.name for ur in user.roles if ur.role])
+    return TEMPLATES.TemplateResponse("user_form.html", {"request": request, "action": "edit", "user": {"id": user.id, "username": user.username, "is_active": user.is_active, "roles": roles, "first_name": user.first_name, "last_name": user.last_name, "phone": user.phone, "must_change_password": user.must_change_password}})
+
+
+@app.post("/users/{user_id}/edit", response_class=HTMLResponse)
+def users_edit_submit(
+    request: Request,
+    user_id: int,
+    username: str = Form(...),
+    password: Optional[str] = Form(None),
+    first_name: Optional[str] = Form(None),
+    last_name: Optional[str] = Form(None),
+    phone: Optional[str] = Form(None),
+    must_change_password: Optional[bool] = Form(False),
+    is_active: Optional[bool] = Form(True),
+    roles: Optional[str] = Form(""),
+    db=Depends(get_db),
+    current_user: Optional[dict] = Depends(get_current_user),
+):
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    if not _require_admin(current_user, db):
+        return TEMPLATES.TemplateResponse("dashboard.html", {"request": request, "error": "Acceso denegado"}, status_code=403)
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        return RedirectResponse(url="/users", status_code=303)
+
+    try:
+        user.username = username
+        user.first_name = first_name
+        user.last_name = last_name
+        user.phone = phone
+        user.must_change_password = bool(must_change_password)
+        user.is_active = bool(is_active)
+        if password:
+            user.password_hash = get_password_hash(password)
+
+        # Actualizar roles: borrar existentes y crear nuevas asociaciones
+        db.query(UserRole).filter(UserRole.user_id == user.id).delete()
+        role_names = [r.strip() for r in (roles or "").split(",") if r.strip()]
+        for rn in role_names:
+            role = db.query(Role).filter(Role.name == rn).first()
+            if not role:
+                role = Role(name=rn)
+                db.add(role)
+                db.commit()
+                db.refresh(role)
+            assoc = UserRole(user_id=user.id, role_id=role.id)
+            db.add(assoc)
+
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        return TEMPLATES.TemplateResponse("user_form.html", {"request": request, "action": "edit", "error": str(e), "user": {"id": user.id, "username": username, "is_active": is_active, "roles": roles}} , status_code=400)
+
+    return RedirectResponse(url="/users", status_code=303)
+
+
+@app.post("/users/{user_id}/delete")
+def users_delete(request: Request, user_id: int, current_user: Optional[dict] = Depends(get_current_user), db=Depends(get_db), permission_ok: bool = Depends(require_permission('users.manage'))):
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    if not _require_admin(current_user, db):
+        return JSONResponse(status_code=403, content={"detail": "Acceso denegado"})
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        return JSONResponse(status_code=404, content={"detail": "Usuario no encontrado"})
+
+    try:
+        db.delete(user)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        return JSONResponse(status_code=500, content={"detail": str(e)})
+
+    return RedirectResponse(url="/users", status_code=303)
+
+
+# Rutas alias en español para compatibilidad con plantillas antiguas
+@app.get("/usuarios", response_class=HTMLResponse)
+def usuarios_page_alias(request: Request, current_user: Optional[dict] = Depends(get_current_user), db=Depends(get_db), permission_ok: bool = Depends(require_permission('users.view'))):
+    return RedirectResponse(url="/users", status_code=303)
+
+
+@app.get("/usuarios/create", response_class=HTMLResponse)
+def usuarios_create_alias(request: Request, current_user: Optional[dict] = Depends(get_current_user), permission_ok: bool = Depends(require_permission('users.manage'))):
+    return RedirectResponse(url="/users/create", status_code=303)
+
+
+@app.get("/usuarios/{user_id}/edit", response_class=HTMLResponse)
+def usuarios_edit_alias(request: Request, user_id: int):
+    return RedirectResponse(url=f"/users/{user_id}/edit", status_code=303)
+
+
+@app.post("/usuarios/{user_id}/delete")
+def usuarios_delete_alias(request: Request, user_id: int):
+    return RedirectResponse(url=f"/users/{user_id}/delete", status_code=303)
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+def dashboard_page(
+    request: Request,
+    current_user: Optional[dict] = Depends(get_current_user),
+    db=Depends(get_db)
+) -> HTMLResponse:
+    # Verificar autenticación
+    if not current_user:
+        response = RedirectResponse(url="/login", status_code=303)
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+
+    # Estadísticas para el dashboard
+    total_entidades = db.query(Entity).count()
+    total_archivos = db.query(FileModel).count()
+    total_hechos = db.query(Fact).count()
+
+    # Archivos recientes
+    archivos_recientes_query = (
+        db.query(
+            FileModel.filename,
+            FileModel.taxonomy,
+            FileModel.created_at,
+            Entity.name.label("entidad"),
+            Period.start.label("period_start"),
+            Period.end.label("period_end"),
+        )
+        .outerjoin(Entity, FileModel.entity)
+        .outerjoin(Period, FileModel.period)
+        .order_by(FileModel.created_at.desc())
+        .limit(5)
+        .all()
+    )
+
+    archivos_recientes = []
+    for archivo in archivos_recientes_query:
+        periodo = _format_period(archivo.period_start, archivo.period_end)
+        total_hechos_archivo = db.query(Fact).filter(Fact.file_id == FileModel.id).count() if hasattr(archivo, 'id') else 0
+        archivos_recientes.append({
+            "filename": archivo.filename,
+            "entidad": archivo.entidad or "N/A",
+            "periodo": periodo,
+            "taxonomy": archivo.taxonomy,
+            "total_hechos": total_hechos_archivo,
+            "created_at": archivo.created_at.strftime("%Y-%m-%d %H:%M") if archivo.created_at else "N/A",
+        })
+
+    stats = {
+        "total_entidades": total_entidades,
+        "total_archivos": total_archivos,
+        "total_hechos": total_hechos,
+        "alertas_activas": 0,
+        "nuevas_entidades": 0,
+        "archivos_mes": 0,
+    }
+
+    response = TEMPLATES.TemplateResponse(
+        "dashboard.html",
+        {
+            "request": request,
+            "active_page": "dashboard",
+            "stats": stats,
+            "archivos_recientes": archivos_recientes,
+            "archivos_por_mes": [0] * 12,
+            "sectores_labels": ["Bancos", "Seguros", "Otros"],
+            "sectores_data": [40, 35, 25],
+        },
+    )
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 @app.get("/upload", response_class=HTMLResponse)
@@ -356,12 +740,20 @@ def upload_page(
     current_user: Optional[dict] = Depends(get_current_user)
 ) -> HTMLResponse:
     if not current_user:
-        return RedirectResponse(url="/login", status_code=303)
+        response = RedirectResponse(url="/login", status_code=303)
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
     
-    return TEMPLATES.TemplateResponse(
+    response = TEMPLATES.TemplateResponse(
         "upload.html",
         {"request": request, "active_page": "upload"},
     )
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 @app.get("/entidades", response_class=HTMLResponse)
@@ -371,13 +763,21 @@ def entidades_page(
     db=Depends(get_db)
 ) -> HTMLResponse:
     if not current_user:
-        return RedirectResponse(url="/login", status_code=303)
+        response = RedirectResponse(url="/login", status_code=303)
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
     
     entities = db.query(Entity).order_by(Entity.name).all()
-    return TEMPLATES.TemplateResponse(
+    response = TEMPLATES.TemplateResponse(
         "entidades.html",
         {"request": request, "active_page": "entidades", "entities": entities},
     )
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 @app.get("/archivos", response_class=HTMLResponse)
@@ -387,7 +787,11 @@ def archivos_page(
     db=Depends(get_db)
 ) -> HTMLResponse:
     if not current_user:
-        return RedirectResponse(url="/login", status_code=303)
+        response = RedirectResponse(url="/login", status_code=303)
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
     
     archivos = (
         db.query(FileModel)
@@ -395,10 +799,14 @@ def archivos_page(
         .order_by(FileModel.created_at.desc())
         .all()
     )
-    return TEMPLATES.TemplateResponse(
+    response = TEMPLATES.TemplateResponse(
         "archivos.html",
         {"request": request, "active_page": "archivos", "archivos": archivos},
     )
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 @app.get("/comparativos", response_class=HTMLResponse)
@@ -412,13 +820,21 @@ def comparativos(
     db=Depends(get_db),
 ) -> HTMLResponse:
     if not current_user:
-        return RedirectResponse(url="/login", status_code=303)
+        response = RedirectResponse(url="/login", status_code=303)
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
     
     rows = _fetch_comparativos_rows(db, entidad, concepto, period_start, period_end)
-    return TEMPLATES.TemplateResponse(
+    response = TEMPLATES.TemplateResponse(
         "comparativos.html",
         {"request": request, "rows": rows, "active_page": "comparativos"},
     )
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 def _render_export_pdf(rows: List[dict]) -> bytes:
@@ -450,7 +866,11 @@ def export_csv(
     db=Depends(get_db),
 ) -> StreamingResponse:
     if not current_user:
-        raise HTTPException(status_code=401, detail="No autenticado")
+        response = RedirectResponse(url="/login", status_code=303)
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
     
     rows = _fetch_comparativos_rows(db, entidad, concepto, period_start, period_end)
     df = _rows_to_dataframe(rows)
@@ -475,7 +895,11 @@ def export_xlsx(
     db=Depends(get_db),
 ) -> StreamingResponse:
     if not current_user:
-        raise HTTPException(status_code=401, detail="No autenticado")
+        response = RedirectResponse(url="/login", status_code=303)
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
     
     rows = _fetch_comparativos_rows(db, entidad, concepto, period_start, period_end)
     df = _rows_to_dataframe(rows)
@@ -501,7 +925,11 @@ def export_pdf(
     db=Depends(get_db),
 ) -> StreamingResponse:
     if not current_user:
-        raise HTTPException(status_code=401, detail="No autenticado")
+        response = RedirectResponse(url="/login", status_code=303)
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
     
     rows = _fetch_comparativos_rows(db, entidad, concepto, period_start, period_end)
     content = _render_export_pdf(rows)
@@ -522,7 +950,11 @@ def upload_xbrl(
     db=Depends(get_db)
 ) -> FileResponse:
     if not current_user:
-        raise HTTPException(status_code=401, detail="No autenticado")
+        response = RedirectResponse(url="/login", status_code=303)
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
     
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=Path(xbrl.filename).suffix) as tmp:

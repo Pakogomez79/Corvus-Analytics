@@ -19,6 +19,46 @@
   
   {% block head %}{% endblock %}
 </head>
+<script>
+  // Verifica la sesión en el servidor y maneja restauración desde bfcache / volver atrás.
+  (function() {
+    if (window.location.pathname.startsWith('/login')) return;
+
+    function checkSession() {
+      fetch('/api/session', { method: 'GET', credentials: 'same-origin', cache: 'no-store' })
+        .then(function(resp) {
+          if (resp.status === 200) return;
+          // No autenticado -> redirigir al login
+          window.location.replace('/login');
+        })
+        .catch(function() {
+          // En caso de error de red, conservador: redirigir al login
+          window.location.replace('/login');
+        });
+    }
+
+    // Comprobación inicial
+    checkSession();
+
+    // pageshow: se dispara cuando la página se restaura desde la bfcache
+    window.addEventListener('pageshow', function(event) {
+      if (event.persisted) {
+        checkSession();
+      }
+    });
+
+    // popstate: navegación con atrás/adelante
+    window.addEventListener('popstate', function() {
+      checkSession();
+    });
+
+    // visibilitychange: al volver a primera plana
+    document.addEventListener('visibilitychange', function() {
+      if (!document.hidden) checkSession();
+    });
+  })();
+</script>
+</head>
 <body x-data="{ sidebarOpen: true }">
   <div class="app-container">
     
@@ -26,16 +66,6 @@
     <aside class="app-sidebar" :class="{ 'open': sidebarOpen }">
       <div class="sidebar-header">
         <img src="{{ url_for('static', path='/images/logo-corvus.png') }}" alt="Corvus International Group" class="sidebar-logo">
-      </div>
-      
-      <div class="sidebar-user">
-        <div class="sidebar-user-avatar">
-          {{ current_user.initials if current_user else 'US' }}
-        </div>
-        <div class="sidebar-user-info">
-          <div class="sidebar-user-name">{{ current_user.name if current_user else 'Usuario' }}</div>
-          <div class="sidebar-user-email">{{ current_user.email if current_user else 'usuario@empresa.com' }}</div>
-        </div>
       </div>
       
       <nav class="sidebar-nav">
@@ -172,6 +202,7 @@
             </li>
           </ul>
         </div>
+        
       </nav>
     </aside>
     
@@ -206,13 +237,49 @@
           <span class="badge">3</span>
         </button>
         
-        <div class="header-user">
-          <div class="header-user-avatar">
-            {{ current_user.initials if current_user else 'US' }}
+        <div class="header-user" x-data="{ open: false }" @click.away="open = false">
+          <div class="header-user-trigger" @click="open = !open" style="cursor: pointer;">
+            <div class="header-user-avatar">
+              {{ current_user.initials if current_user else 'US' }}
+            </div>
+            <div class="header-user-info">
+              <span class="header-user-name">{{ current_user.name if current_user else 'Usuario' }}</span>
+              <span class="header-user-role">{{ current_user.role if current_user else 'Analista' }}</span>
+            </div>
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" style="width: 16px; height: 16px; margin-left: 8px;">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+            </svg>
           </div>
-          <div class="header-user-info">
-            <span class="header-user-name">{{ current_user.name if current_user else 'Usuario' }}</span>
-            <span class="header-user-role">{{ current_user.role if current_user else 'Analista' }}</span>
+          
+          <!-- Dropdown Menu -->
+          <div x-show="open" 
+               x-transition:enter="transition ease-out duration-100"
+               x-transition:enter-start="transform opacity-0 scale-95"
+               x-transition:enter-end="transform opacity-100 scale-100"
+               x-transition:leave="transition ease-in duration-75"
+               x-transition:leave-start="transform opacity-100 scale-100"
+               x-transition:leave-end="transform opacity-0 scale-95"
+               class="header-user-dropdown"
+               style="display: none;">
+            <a href="/perfil" class="dropdown-item">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+              Mi Perfil
+            </a>
+            <a href="/change-password" class="dropdown-item">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+              </svg>
+              Cambiar Contraseña
+            </a>
+            <div class="dropdown-divider"></div>
+            <a href="/logout" class="dropdown-item logout">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+              Cerrar Sesión
+            </a>
           </div>
         </div>
       </div>
@@ -220,7 +287,9 @@
     
     <!-- ========== MAIN CONTENT ========== -->
     <main class="app-main">
-      {% block content %}{% endblock %}
+      <div class="content-wrapper">
+        {% block content %}{% endblock %}
+      </div>
     </main>
     
   </div>

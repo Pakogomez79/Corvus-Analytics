@@ -89,6 +89,13 @@
 - [ ] Registro de IP y user-agent
 - [ ] Listado de logs con filtros (usuario, fecha, módulo)
 - [ ] Exportación de logs
+### 1.5 Bitácora de Auditoría
+- [ ] Modelo AuditLog en BD
+- [x] Registro automático de login/logout
+- [ ] Registro de acciones CRUD
+- [ ] Registro de IP y user-agent
+- [ ] Listado de logs con filtros (usuario, fecha, módulo)
+- [ ] Exportación de logs
 
 ### 1.6 Configuración General
 - [ ] Logo de empresa (upload)
@@ -256,14 +263,14 @@
 ## 📈 MÓDULO 5: DASHBOARD
 
 ### 5.1 Dashboard Principal
-- [ ] KPIs principales (cards)
-  - [ ] Total empresas activas
-  - [ ] Archivos cargados este mes
+- [x] KPIs principales (cards)
+  - [x] Total empresas activas
+  - [x] Archivos cargados este mes
   - [ ] Alertas pendientes
-  - [ ] Último archivo cargado
-- [ ] Gráfico: Archivos por mes (últimos 12 meses)
-- [ ] Gráfico: Distribución por sector
-- [ ] Tabla: Archivos recientes
+  - [x] Último archivo cargado
+- [x] Gráfico: Archivos por mes (últimos 12 meses)
+- [x] Gráfico: Distribución por sector
+- [x] Tabla: Archivos recientes
 
 ### 5.2 Widgets Personalizables
 - [ ] Modelo DashboardWidget (user_id, tipo, config_json, orden)

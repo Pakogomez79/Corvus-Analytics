@@ -13,7 +13,7 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
-from .models import User
+from .models import User, Permission, Role, RolePermission, UserPermission, UserRole
 from .logger import get_logger
 
 logger = get_logger(__name__)
@@ -155,7 +155,7 @@ def get_current_user_from_token(
         raise credentials_exception
 
 
-def create_user(db: Session, username: str, password: str, email: Optional[str] = None) -> User:
+def create_user(db: Session, username: str, password: str, first_name: Optional[str] = None, last_name: Optional[str] = None, phone: Optional[str] = None, must_change_password: bool = False) -> User:
     """
     Crea un nuevo usuario en la base de datos
     
@@ -178,7 +178,11 @@ def create_user(db: Session, username: str, password: str, email: Optional[str] 
     new_user = User(
         username=username,
         password_hash=hashed_password,
-        is_active=True
+        is_active=True,
+        first_name=first_name,
+        last_name=last_name,
+        phone=phone,
+        must_change_password=must_change_password,
     )
     
     db.add(new_user)
@@ -215,6 +219,9 @@ def change_password(db: Session, user_id: int, old_password: str, new_password: 
     
     # Actualizar contraseña
     user.password_hash = get_password_hash(new_password)
+    # Marcar que ya cambió la contraseña y guardar fecha
+    user.must_change_password = False
+    user.password_changed_at = datetime.utcnow()
     db.commit()
     
     logger.info(f"Contraseña cambiada para usuario ID: {user_id}")
@@ -254,3 +261,33 @@ def validate_password_strength(password: str) -> tuple[bool, str]:
         return False, "La contraseña debe contener al menos un carácter especial"
     
     return True, "Contraseña válida"
+
+
+def has_permission(db: Session, user_id: int, permission_name: str) -> bool:
+    """
+    Verifica si el usuario tiene un permiso específico.
+    Revisa primero permisos directos del usuario y luego permisos por rol.
+    """
+    if not user_id or not permission_name:
+        return False
+
+    # Revisar permisos directos de usuario
+    up = (
+        db.query(UserPermission)
+        .join(Permission)
+        .filter(UserPermission.user_id == user_id, Permission.name == permission_name)
+        .first()
+    )
+    if up:
+        return True
+
+    # Revisar permisos por rol
+    rp = (
+        db.query(Permission)
+        .join(RolePermission)
+        .join(Role, Role.id == RolePermission.role_id)
+        .join(UserRole, UserRole.role_id == Role.id)
+        .filter(UserRole.user_id == user_id, Permission.name == permission_name)
+        .first()
+    )
+    return bool(rp)

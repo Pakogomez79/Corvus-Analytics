@@ -7,7 +7,8 @@
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
   <style>
-    body { max-width: 1200px; margin: auto; padding: 1.5rem; }
+    body { width: 100%; margin: 0; padding: 0; }
+    .content-wrapper { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
     table { width: 100%; }
   </style>
 </head>
@@ -17,10 +18,13 @@
     <nav>
       <a href="/">Inicio</a>
       <a href="/comparativos">Comparativos</a>
+      <a href="/users">Usuarios</a>
     </nav>
   </header>
   <main>
-    {% block content %}{% endblock %}
+    <div class="content-wrapper">
+      {% block content %}{% endblock %}
+    </div>
   </main>
 </body>
 </html>

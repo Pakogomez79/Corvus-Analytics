@@ -1,0 +1,75 @@
+{% extends "layout.html" %}
+
+{% block title %}Usuarios - Corvus International Group{% endblock %}
+{% block page_title %}{{ 'Crear usuario' if action == 'create' else 'Editar usuario' }}{% endblock %}
+{% block breadcrumb %}Administración &gt; Usuarios{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <div>
+      <h3 class="card-title">{{ 'Crear usuario' if action == 'create' else 'Editar usuario' }}</h3>
+      <p class="card-subtitle">Administra usuarios del sistema</p>
+    </div>
+  </div>
+
+  <div class="card-body">
+    {% if error %}
+      <div class="alert alert-danger">{{ error }}</div>
+    {% endif %}
+    <form method="post" action="{% if action == 'create' %}/users/create{% else %}/users/{{ user.id }}/edit{% endif %}">
+      <div class="form-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:1rem;">
+        <div class="form-group">
+          <label class="form-label" for="first_name">Nombre</label>
+          <input id="first_name" name="first_name" class="form-control" value="{{ user.first_name if user }}" />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="last_name">Apellido</label>
+          <input id="last_name" name="last_name" class="form-control" value="{{ user.last_name if user }}" />
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="username">Usuario</label>
+        <input id="username" name="username" class="form-control" value="{{ user.username if user }}" required />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="password">Contraseña {% if action == 'edit' %}(dejar vacío para no cambiar){% endif %}</label>
+        <input id="password" name="password" type="password" class="form-control" />
+      </div>
+
+      <div class="form-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:1rem;">
+        <div class="form-group">
+          <label class="form-label" for="phone">Teléfono</label>
+          <input id="phone" name="phone" class="form-control" value="{{ user.phone if user }}" />
+        </div>
+        <div class="form-group" style="display:flex; flex-direction:column; justify-content:center;">
+          <label class="form-label" for="must_change_password">Obligar cambio de contraseña al ingresar</label>
+          <input id="must_change_password" name="must_change_password" type="checkbox" value="True" {% if user and user.must_change_password %}checked{% endif %} />
+        </div>
+      </div>
+
+      <div class="form-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:1rem; align-items:center;">
+        <div class="form-group">
+          <label class="form-label" for="is_active">Activo</label>
+          <select id="is_active" name="is_active" class="form-control">
+            <option value="True" {% if user and user.is_active %}selected{% endif %}>Sí</option>
+            <option value="False" {% if user and not user.is_active %}selected{% endif %}>No</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="roles">Roles (coma-separados)</label>
+          <input id="roles" name="roles" class="form-control" value="{{ user.roles if user }}" />
+        </div>
+      </div>
+
+      <div style="display:flex; gap:0.75rem; justify-content:flex-end; margin-top:1rem;">
+        <a class="btn btn-secondary" href="/users">Cancelar</a>
+        <button class="btn btn-primary" type="submit">{% if action == 'create' %}Crear{% else %}Guardar cambios{% endif %}</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
