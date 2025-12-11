@@ -10,15 +10,15 @@
 
 | Módulo | Completado | Total | Progreso |
 |--------|------------|-------|----------|
-| 🔐 Administración | 7 | 22 | 🟨 32% |
+| 🔐 Administración | 7 | 21 | 🟨 33% |
 | 📋 Configuración XBRL | 0 | 25 | ⬜ 0% |
 | 📤 Carga de Datos | 0 | 18 | ⬜ 0% |
 | 📊 Análisis Financiero | 0 | 32 | ⬜ 0% |
 | 📈 Dashboard | 0 | 12 | ⬜ 0% |
 | 🔔 Alertas | 0 | 14 | ⬜ 0% |
 | 📄 Exportación | 0 | 9 | ⬜ 0% |
-| 🖥️ Infraestructura | 10 | 15 | ✅ 67% |
-| **TOTAL** | **17** | **147** | **12%** |
+| 🖥️ Infraestructura | 11 | 15 | 🟩 73% |
+| **TOTAL** | **18** | **146** | **12%** |
 
 ---
 
@@ -36,7 +36,7 @@
 ### Base de Datos
 - [x] Configurar Alembic para migraciones
 - [x] Crear migración inicial con modelo de datos
-- [ ] Script de seed para datos iniciales
+- [x] Script de seed para datos iniciales (create_users.py)
 - [x] Configuración dual MySQL/SQL Server
 - [ ] Índices y optimización de queries
 
@@ -50,16 +50,15 @@
 
 ## 🔐 MÓDULO 1: ADMINISTRACIÓN
 
-### 1.1 Autenticación
-- [x] Página de login
-- [x] Formulario de login (email + contraseña)
-- [x] Validación de credenciales
-- [x] Generación de token JWT
+### 1.1 Autenticación (✅ 87% - 7/8)
+- [x] Página de login con diseño MaterialPro
+- [x] Formulario de login (username + contraseña)
+- [x] Validación de credenciales con bcrypt
+- [x] Generación de token JWT (30min expiry)
 - [x] Middleware de autenticación (protección de rutas)
 - [x] Página de logout
-- [ ] Recuperación de contraseña (email)
-- [x] Cambio de contraseña
-- [ ] Cambio de contraseña
+- [ ] Recuperación de contraseña (email) - Requiere SMTP
+- [x] Cambio de contraseña con validación de fortaleza
 
 ### 1.2 Gestión de Usuarios
 - [ ] Listado de usuarios (tabla con filtros)
