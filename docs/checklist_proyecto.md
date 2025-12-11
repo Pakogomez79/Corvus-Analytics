@@ -10,7 +10,7 @@
 
 | Módulo | Completado | Total | Progreso |
 |--------|------------|-------|----------|
-| 🔐 Administración | 0 | 22 | ⬜ 0% |
+| 🔐 Administración | 7 | 22 | 🟨 32% |
 | 📋 Configuración XBRL | 0 | 25 | ⬜ 0% |
 | 📤 Carga de Datos | 0 | 18 | ⬜ 0% |
 | 📊 Análisis Financiero | 0 | 32 | ⬜ 0% |
@@ -18,7 +18,7 @@
 | 🔔 Alertas | 0 | 14 | ⬜ 0% |
 | 📄 Exportación | 0 | 9 | ⬜ 0% |
 | 🖥️ Infraestructura | 10 | 15 | ✅ 67% |
-| **TOTAL** | **10** | **147** | **7%** |
+| **TOTAL** | **17** | **147** | **12%** |
 
 ---
 
@@ -51,13 +51,14 @@
 ## 🔐 MÓDULO 1: ADMINISTRACIÓN
 
 ### 1.1 Autenticación
-- [ ] Página de login
-- [ ] Formulario de login (email + contraseña)
-- [ ] Validación de credenciales
-- [ ] Generación de token JWT
-- [ ] Middleware de autenticación
-- [ ] Página de logout
+- [x] Página de login
+- [x] Formulario de login (email + contraseña)
+- [x] Validación de credenciales
+- [x] Generación de token JWT
+- [x] Middleware de autenticación (protección de rutas)
+- [x] Página de logout
 - [ ] Recuperación de contraseña (email)
+- [x] Cambio de contraseña
 - [ ] Cambio de contraseña
 
 ### 1.2 Gestión de Usuarios
