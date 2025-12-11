@@ -2,21 +2,22 @@ from __future__ import annotations
 
 import io
 import tempfile
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import List, Optional
 
 import pandas as pd
 import pdfkit
-from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile, Cookie
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import or_
 from sqlalchemy.orm import joinedload
 from xhtml2pdf import pisa
 
+from .auth import authenticate_user, create_access_token, decode_token, change_password, validate_password_strength
 from .canonical_mapping import resolve_canonical_concept
 from .db import SessionLocal, engine
 from .ingest_arelle import parse_xbrl
@@ -31,7 +32,7 @@ logger = setup_application_logging()
 BASE_DIR = Path(__file__).resolve().parent
 TEMPLATES = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
-app = FastAPI(title="Corvus Analytics XBRL")
+app = FastAPI(title="Corvus International Group")
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 Base.metadata.create_all(bind=engine)
 
@@ -43,6 +44,163 @@ def get_db():
     finally:
         db.close()
 
+
+def get_current_user(
+    request: Request,
+    access_token: Optional[str] = Cookie(None),
+    db = Depends(get_db)
+) -> Optional[dict]:
+    """
+    Obtiene el usuario actual desde el token en la cookie
+    Redirige al login si no hay token válido
+    """
+    if not access_token:
+        return None
+    
+    # Extraer el token (formato: "Bearer <token>")
+    if access_token.startswith("Bearer "):
+        token = access_token[7:]
+    else:
+        token = access_token
+    
+    # Decodificar token
+    payload = decode_token(token)
+    
+    if not payload:
+        return None
+    
+    return payload
+
+
+# ============================================================================
+# RUTAS DE AUTENTICACIÓN
+# ============================================================================
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request, error: Optional[str] = None):
+    """Muestra la página de login"""
+    return TEMPLATES.TemplateResponse("login.html", {
+        "request": request,
+        "error": error
+    })
+
+
+@app.post("/login", response_class=HTMLResponse)
+async def login(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    db = Depends(get_db)
+):
+    """Procesa el login del usuario y genera token JWT"""
+    
+    # Autenticar usuario
+    user = authenticate_user(db, username, password)
+    
+    if not user:
+        logger.warning(f"Intento de login fallido para usuario: {username}")
+        return TEMPLATES.TemplateResponse("login.html", {
+            "request": request,
+            "error": "Usuario o contraseña incorrectos"
+        }, status_code=401)
+    
+    # Crear token JWT
+    access_token_expires = timedelta(minutes=30)
+    access_token = create_access_token(
+        data={"sub": user.username, "user_id": user.id},
+        expires_delta=access_token_expires
+    )
+    
+    logger.info(f"Login exitoso para usuario: {username}")
+    
+    # Redirigir al dashboard con el token en cookie
+    response = RedirectResponse(url="/", status_code=303)
+    response.set_cookie(
+        key="access_token",
+        value=f"Bearer {access_token}",
+        httponly=True,
+        max_age=1800,  # 30 minutos
+        samesite="lax"
+    )
+    
+    return response
+
+
+@app.get("/logout")
+async def logout(request: Request):
+    """Cierra la sesión del usuario eliminando el token"""
+    logger.info("Usuario cerró sesión")
+    response = RedirectResponse(url="/login", status_code=303)
+    response.delete_cookie(key="access_token")
+    return response
+
+
+@app.get("/change-password", response_class=HTMLResponse)
+async def change_password_page(
+    request: Request,
+    current_user: Optional[dict] = Depends(get_current_user),
+    error: Optional[str] = None,
+    success: Optional[str] = None
+):
+    """Muestra la página para cambiar contraseña"""
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    
+    return TEMPLATES.TemplateResponse("change_password.html", {
+        "request": request,
+        "error": error,
+        "success": success
+    })
+
+
+@app.post("/change-password", response_class=HTMLResponse)
+async def change_password_submit(
+    request: Request,
+    current_password: str = Form(...),
+    new_password: str = Form(...),
+    confirm_password: str = Form(...),
+    current_user: Optional[dict] = Depends(get_current_user),
+    db = Depends(get_db)
+):
+    """Procesa el cambio de contraseña"""
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    
+    # Validar que las nuevas contraseñas coincidan
+    if new_password != confirm_password:
+        return TEMPLATES.TemplateResponse("change_password.html", {
+            "request": request,
+            "error": "Las contraseñas nuevas no coinciden"
+        }, status_code=400)
+    
+    # Validar fortaleza de la contraseña
+    is_valid, message = validate_password_strength(new_password)
+    if not is_valid:
+        return TEMPLATES.TemplateResponse("change_password.html", {
+            "request": request,
+            "error": message
+        }, status_code=400)
+    
+    # Cambiar contraseña
+    user_id = current_user.get("user_id")
+    success = change_password(db, user_id, current_password, new_password)
+    
+    if success:
+        logger.info(f"Contraseña cambiada para usuario ID: {user_id}")
+        return TEMPLATES.TemplateResponse("change_password.html", {
+            "request": request,
+            "success": "Contraseña cambiada exitosamente"
+        })
+    else:
+        return TEMPLATES.TemplateResponse("change_password.html", {
+            "request": request,
+            "error": "Contraseña actual incorrecta"
+        }, status_code=400)
+
+
+# ============================================================================
+# RUTAS EXISTENTES
+# ============================================================================
 
 def _format_period(period_start: Optional[date], period_end: Optional[date]) -> str:
     if period_start and period_end:
@@ -124,7 +282,15 @@ def _rows_to_dataframe(rows: List[dict]) -> pd.DataFrame:
 
 
 @app.get("/", response_class=HTMLResponse)
-def home(request: Request, db=Depends(get_db)) -> HTMLResponse:
+def home(
+    request: Request,
+    current_user: Optional[dict] = Depends(get_current_user),
+    db=Depends(get_db)
+) -> HTMLResponse:
+    # Verificar autenticación
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    
     # Estadísticas para el dashboard
     total_entidades = db.query(Entity).count()
     total_archivos = db.query(FileModel).count()
@@ -185,7 +351,13 @@ def home(request: Request, db=Depends(get_db)) -> HTMLResponse:
 
 
 @app.get("/upload", response_class=HTMLResponse)
-def upload_page(request: Request) -> HTMLResponse:
+def upload_page(
+    request: Request,
+    current_user: Optional[dict] = Depends(get_current_user)
+) -> HTMLResponse:
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    
     return TEMPLATES.TemplateResponse(
         "upload.html",
         {"request": request, "active_page": "upload"},
@@ -193,7 +365,14 @@ def upload_page(request: Request) -> HTMLResponse:
 
 
 @app.get("/entidades", response_class=HTMLResponse)
-def entidades_page(request: Request, db=Depends(get_db)) -> HTMLResponse:
+def entidades_page(
+    request: Request,
+    current_user: Optional[dict] = Depends(get_current_user),
+    db=Depends(get_db)
+) -> HTMLResponse:
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    
     entities = db.query(Entity).order_by(Entity.name).all()
     return TEMPLATES.TemplateResponse(
         "entidades.html",
@@ -202,7 +381,14 @@ def entidades_page(request: Request, db=Depends(get_db)) -> HTMLResponse:
 
 
 @app.get("/archivos", response_class=HTMLResponse)
-def archivos_page(request: Request, db=Depends(get_db)) -> HTMLResponse:
+def archivos_page(
+    request: Request,
+    current_user: Optional[dict] = Depends(get_current_user),
+    db=Depends(get_db)
+) -> HTMLResponse:
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    
     archivos = (
         db.query(FileModel)
         .options(joinedload(FileModel.entity))
@@ -222,8 +408,12 @@ def comparativos(
     concepto: Optional[str] = Query(None),
     period_start: Optional[date] = Query(None),
     period_end: Optional[date] = Query(None),
+    current_user: Optional[dict] = Depends(get_current_user),
     db=Depends(get_db),
 ) -> HTMLResponse:
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    
     rows = _fetch_comparativos_rows(db, entidad, concepto, period_start, period_end)
     return TEMPLATES.TemplateResponse(
         "comparativos.html",
@@ -256,8 +446,12 @@ def export_csv(
     concepto: Optional[str] = Query(None),
     period_start: Optional[date] = Query(None),
     period_end: Optional[date] = Query(None),
+    current_user: Optional[dict] = Depends(get_current_user),
     db=Depends(get_db),
 ) -> StreamingResponse:
+    if not current_user:
+        raise HTTPException(status_code=401, detail="No autenticado")
+    
     rows = _fetch_comparativos_rows(db, entidad, concepto, period_start, period_end)
     df = _rows_to_dataframe(rows)
     buf = io.StringIO()
@@ -277,8 +471,12 @@ def export_xlsx(
     concepto: Optional[str] = Query(None),
     period_start: Optional[date] = Query(None),
     period_end: Optional[date] = Query(None),
+    current_user: Optional[dict] = Depends(get_current_user),
     db=Depends(get_db),
 ) -> StreamingResponse:
+    if not current_user:
+        raise HTTPException(status_code=401, detail="No autenticado")
+    
     rows = _fetch_comparativos_rows(db, entidad, concepto, period_start, period_end)
     df = _rows_to_dataframe(rows)
     buf = io.BytesIO()
@@ -299,8 +497,12 @@ def export_pdf(
     concepto: Optional[str] = Query(None),
     period_start: Optional[date] = Query(None),
     period_end: Optional[date] = Query(None),
+    current_user: Optional[dict] = Depends(get_current_user),
     db=Depends(get_db),
 ) -> StreamingResponse:
+    if not current_user:
+        raise HTTPException(status_code=401, detail="No autenticado")
+    
     rows = _fetch_comparativos_rows(db, entidad, concepto, period_start, period_end)
     content = _render_export_pdf(rows)
     buf = io.BytesIO(content)
@@ -313,7 +515,15 @@ def export_pdf(
 
 
 @app.post("/upload-xbrl", response_model=FileResponse)
-def upload_xbrl(request: Request, xbrl: UploadFile = File(...), db=Depends(get_db)) -> FileResponse:
+def upload_xbrl(
+    request: Request,
+    xbrl: UploadFile = File(...),
+    current_user: Optional[dict] = Depends(get_current_user),
+    db=Depends(get_db)
+) -> FileResponse:
+    if not current_user:
+        raise HTTPException(status_code=401, detail="No autenticado")
+    
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=Path(xbrl.filename).suffix) as tmp:
             tmp.write(xbrl.file.read())

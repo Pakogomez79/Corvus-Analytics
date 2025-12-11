@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>{% block title %}Corvus XBRL{% endblock %}</title>
+  <title>{% block title %}Corvus International Group{% endblock %}</title>
   
   <!-- CSS -->
   <link rel="stylesheet" href="/static/css/corvus.css">
@@ -25,20 +25,7 @@
     <!-- ========== SIDEBAR ========== -->
     <aside class="app-sidebar" :class="{ 'open': sidebarOpen }">
       <div class="sidebar-header">
-        <svg class="sidebar-logo" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <circle cx="20" cy="20" r="18" fill="url(#logoGrad)"/>
-          <path d="M12 20C12 15.5 15.5 12 20 12C22.5 12 24.7 13.2 26.2 15L20 20L26.2 25C24.7 26.8 22.5 28 20 28C15.5 28 12 24.5 12 20Z" fill="white"/>
-          <defs>
-            <linearGradient id="logoGrad" x1="0" y1="0" x2="40" y2="40">
-              <stop offset="0%" stop-color="#00bcd4"/>
-              <stop offset="100%" stop-color="#1e3a5f"/>
-            </linearGradient>
-          </defs>
-        </svg>
-        <div class="sidebar-brand">
-          <span class="sidebar-brand-name">Corvus XBRL</span>
-          <span class="sidebar-brand-tagline">Enterprise</span>
-        </div>
+        <img src="{{ url_for('static', path='/images/logo-corvus.png') }}" alt="Corvus International Group" class="sidebar-logo">
       </div>
       
       <div class="sidebar-user">

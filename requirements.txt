@@ -17,7 +17,7 @@ arelle-release>=2.25.0
 python-jose[cryptography]>=3.3.0
 passlib[bcrypt]>=1.7.4
 python-dotenv>=1.0.0
-bcrypt>=4.1.2
+bcrypt==4.2.1  # Versión específica para compatibilidad con passlib
 
 # Email support (for password recovery)
 fastapi-mail>=1.4.1
