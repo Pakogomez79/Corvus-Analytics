@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block content %}
+<section>
+  <h3>Comparativos</h3>
+  <form method="get" action="/comparativos" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:0.5rem; margin-bottom:1rem;">
+    <label>
+      Entidad
+      <input type="search" name="entidad" value="{{ request.query_params.get('entidad', '') }}" placeholder="Nombre" />
+    </label>
+    <label>
+      Concepto
+      <input type="search" name="concepto" value="{{ request.query_params.get('concepto', '') }}" placeholder="Concepto o canonical" />
+    </label>
+    <label>
+      Desde
+      <input type="date" name="period_start" value="{{ request.query_params.get('period_start', '') }}" />
+    </label>
+    <label>
+      Hasta
+      <input type="date" name="period_end" value="{{ request.query_params.get('period_end', '') }}" />
+    </label>
+    <div style="display:flex; gap:0.5rem; align-items:flex-end;">
+      <button type="submit">Filtrar</button>
+      <a role="button" class="outline" href="/comparativos">Limpiar</a>
+    </div>
+  </form>
+  <div style="display:flex; gap:0.5rem; margin-bottom:1rem; flex-wrap:wrap;">
+    {% set query = request.url.query %}
+    <a role="button" href="/export/csv{% if query %}?{{ query }}{% endif %}">Export CSV</a>
+    <a role="button" href="/export/xlsx{% if query %}?{{ query }}{% endif %}">Export XLSX</a>
+    <a role="button" href="/export/pdf{% if query %}?{{ query }}{% endif %}">Export PDF</a>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Entidad</th>
+        <th>Periodo</th>
+        <th>Concepto</th>
+        <th>Valor</th>
+        <th>Moneda</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>{{ row.entidad }}</td>
+        <td>{{ row.periodo }}</td>
+        <td>{{ row.concepto }}</td>
+        <td>{{ "{:,}".format(row.valor) }}</td>
+        <td>{{ row.moneda }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

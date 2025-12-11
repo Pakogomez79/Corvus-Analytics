@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    body { font-family: Arial, sans-serif; font-size: 12px; }
+    h3 { margin-bottom: 8px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ccc; padding: 6px; text-align: left; }
+  </style>
+</head>
+<body>
+  <h3>Comparativos</h3>
+  <p>Fecha: {{ today }}</p>
+  <table>
+    <thead>
+      <tr>
+        <th>Entidad</th>
+        <th>Periodo</th>
+        <th>Concepto</th>
+        <th>Valor</th>
+        <th>Moneda</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>{{ row.entidad }}</td>
+        <td>{{ row.periodo }}</td>
+        <td>{{ row.concepto }}</td>
+        <td>{{ row.valor }}</td>
+        <td>{{ row.moneda }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</body>
+</html>

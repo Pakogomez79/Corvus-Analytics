@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}
+<section>
+  <h3>Panel XBRL</h3>
+  <p>Sube archivos XBRL, valida y genera comparativos con export a CSV/XLSX/PDF.</p>
+  <form hx-post="/upload-xbrl" hx-target="#upload-result" hx-swap="innerHTML" hx-encoding="multipart/form-data" style="margin-bottom:1rem;">
+    <label for="xbrl">Selecciona archivo XBRL</label>
+    <input type="file" id="xbrl" name="xbrl" accept=".xbrl,.xml" required />
+    <button type="submit">Subir y procesar</button>
+  </form>
+  <div id="upload-result"></div>
+  <a role="button" href="/comparativos">Ver comparativos</a>
+</section>
+{% endblock %}
