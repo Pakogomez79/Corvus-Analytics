@@ -10,7 +10,7 @@
 
 | Módulo | Completado | Total | Progreso |
 |--------|------------|-------|----------|
-| 🔐 Administración | 28 | 33 | 🟩 85% |
+| 🔐 Administración | 25 | 33 | 🟩 76% |
 | 📋 Configuración XBRL | 0 | 34 | ⬜ 0% |
 | 📤 Carga de Datos | 0 | 23 | ⬜ 0% |
 | 📊 Análisis Financiero | 0 | 55 | ⬜ 0% |
@@ -18,7 +18,7 @@
 | 🔔 Alertas | 0 | 18 | ⬜ 0% |
 | 📄 Exportación | 0 | 14 | ⬜ 0% |
 | 🖥️ Infraestructura | 11 | 16 | 🟩 69% |
-| **TOTAL** | **46** | **208** | **22%** |
+| **TOTAL** | **43** | **208** | **21%** |
 
 ---
 
@@ -77,10 +77,10 @@
 
 ### 1.4 Gestión de Permisos
 ### 1.4 Gestión de Permisos
-- [x] Matriz de permisos (rol × módulo × acción)
-- [x] Acciones: Ver, Crear, Editar, Eliminar, Exportar (soporte backend presente)
+- [ ] Matriz de permisos (rol × módulo × acción)
+- [ ] Acciones: Ver, Crear, Editar, Eliminar, Exportar (soporte backend presente)
 - [x] Decorador de permisos en rutas
-- [x] Ocultamiento de menús según permisos
+- [ ] Ocultamiento de menús según permisos
 
 ### 1.5 Bitácora de Auditoría
 - [x] Modelo AuditLog en BD
