@@ -278,3 +278,29 @@ Para soporte técnico o consultas:
 ---
 
 ⭐ Si este proyecto te resulta útil, considera darle una estrella en GitHub!
+
+## 🔁 Cambios recientes (11 de diciembre de 2025)
+
+Resumen de las mejoras implementadas y commiteadas recientemente:
+
+- Configuración General (`/config/settings.json`): almacenamiento y UI para `company_name`, `date_format` y `currency`. Endpoint y plantilla: `app/main.py` y `app/templates/configuracion.html`.
+- Subida de logo desde la interfaz: campo `logo_file` en el formulario de configuración; los logos se guardan en `app/static/images/logo.png` (se sobrescribe el archivo existente).
+- Normalización de rutas locales de logo: si `settings.logo_url` contiene una ruta de fichero local dentro de `static`, se convierte automáticamente a URL pública `/static/...` para que la plantilla muestre la vista previa.
+- Comportamiento seguro: la subida valida extensiones de imagen y limita la ubicación pública de los logos a `app/static/images`.
+
+Commits y tag relevantes:
+
+- Commit inicial del estado actual: `273e8ff` (tag: `v2025.12.11-273e8ff`)
+- `c90b89f`: actualización del checklist
+- `9eb1fd8`: soporte para upload de logo (guardado en `static/images`)
+- `08ed36b`: normalización de rutas locales de logo a URL pública
+- `9d8c92d`: limpieza de logos antiguos (antes de usar nombre fijo)
+- `b60dbc4`: uso de nombre fijo `logo.png` al subir (sobrescribe existente)
+- `7b499f`: checklist marcado como completado para 1.6
+- `6fa4224`: actualización de la tabla de progreso en el checklist
+
+Si quieres, puedo:
+
+- Generar un changelog más detallado con diffs de los commits.
+- Añadir instrucciones rápidas en este README sobre cómo probar la subida de logo desde la interfaz.
+
