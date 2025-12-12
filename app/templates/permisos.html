@@ -85,6 +85,63 @@
 
 {% endblock %}
 
+<!-- Sección: Matriz integrada -->
+<div class="card" style="margin-top:1rem;">
+  <div class="card-header">
+    <div>
+      <h3 class="card-title">Matriz de Permisos (rol × permiso)</h3>
+      <p class="card-subtitle">Asigne permisos por rol</p>
+    </div>
+    <div style="display:flex; gap:1rem; align-items:center;">
+      <button id="toggle-matrix" class="btn btn-outline" type="button">Mostrar / Ocultar Matriz</button>
+    </div>
+  </div>
+  <div id="matrix-area" class="table-container" style="display:none; padding:1rem;">
+    <form method="post" action="/permisos/matriz/guardar">
+      <div class="table-responsive">
+        <table class="matrix-table">
+          <thead>
+            <tr>
+              <th>Permiso \ Rol</th>
+              {% for r in roles %}
+                <th>{{ r.name }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in permissions_matrix %}
+              <tr>
+                <td class="perm-name">{{ p.name }}<br><small>{{ p.description or '' }}</small></td>
+                {% for r in roles %}
+                  <td class="perm-cell">
+                    {% set checked = (r.id, p.id) in assigned %}
+                    <input type="checkbox" name="assign_{{ r.id }}_{{ p.id }}" {% if checked %}checked{% endif %} />
+                  </td>
+                {% endfor %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div style="margin-top: 1rem;">
+        <button class="btn btn-primary" type="submit">Guardar matriz</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  (function(){
+    const btn = document.getElementById('toggle-matrix');
+    const area = document.getElementById('matrix-area');
+    if (!btn || !area) return;
+    btn.addEventListener('click', function(){
+      area.style.display = area.style.display === 'none' ? 'block' : 'none';
+      window.scrollTo({ top: area.offsetTop - 80, behavior: 'smooth' });
+    });
+  })();
+</script>
+
 {% block scripts %}
 <script>
   (function(){

@@ -1344,7 +1344,30 @@ def permisos_page(
     for p in perms:
         perms_data.append({"id": p.id, "name": p.name, "description": p.description or ""})
 
-    return TEMPLATES.TemplateResponse("permisos.html", {"request": request, "permissions": perms_data, "active_page": "permisos", "q": q or "", "page": page, "pages": pages, "total": total, "per_page": per_page})
+    # --- datos adicionales para la matriz integrada en la misma página ---
+    roles = db.query(Role).order_by(Role.name).all()
+    permissions_matrix = db.query(Permission).order_by(Permission.name).all()
+    assigned = set()
+    for rp in db.query(RolePermission).all():
+        if rp.role_id and rp.permission_id:
+            assigned.add((rp.role_id, rp.permission_id))
+
+    return TEMPLATES.TemplateResponse(
+        "permisos.html",
+        {
+            "request": request,
+            "permissions": perms_data,
+            "active_page": "permisos",
+            "q": q or "",
+            "page": page,
+            "pages": pages,
+            "total": total,
+            "per_page": per_page,
+            "roles": roles,
+            "permissions_matrix": permissions_matrix,
+            "assigned": assigned,
+        },
+    )
 
 
 @app.get("/permisos/export")
