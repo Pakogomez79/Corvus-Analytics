@@ -28,8 +28,22 @@ def create_admin_user():
         # Verificar si ya existe un usuario admin
         existing_admin = db.query(User).filter(User.username == "admin").first()
         
+        # Si ya existe, asegurar que tenga el rol 'admin' asignado
         if existing_admin:
-            print("⚠️  El usuario 'admin' ya existe")
+            role_admin = db.query(Role).filter(Role.name == 'admin').first()
+            if not role_admin:
+                role_admin = Role(name='admin')
+                db.add(role_admin)
+                db.commit()
+                db.refresh(role_admin)
+
+            assoc = db.query(UserRole).filter(UserRole.user_id == existing_admin.id, UserRole.role_id == role_admin.id).first()
+            if not assoc:
+                assoc = UserRole(user_id=existing_admin.id, role_id=role_admin.id)
+                db.add(assoc)
+                db.commit()
+
+            print("⚠️  El usuario 'admin' ya existe — rol 'admin' asignado si faltaba")
             return
         
         # Crear usuario admin
@@ -107,7 +121,10 @@ def seed_permissions_and_roles(db):
         'system.admin',
         'users.view',
         'users.manage',
+        'roles.view',
         'roles.manage',
+        'permissions.view',
+        'permissions.manage',
         'audit.view',
         'config.manage',
         'entities.view',

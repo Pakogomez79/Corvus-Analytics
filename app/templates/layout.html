@@ -161,6 +161,7 @@
         <div class="sidebar-section">
           <div class="sidebar-section-title">Administración</div>
           <ul class="sidebar-menu">
+            {% if has_permission(request, 'users.view') %}
             <li class="sidebar-menu-item">
               <a href="/usuarios" class="sidebar-menu-link {% if active_page == 'usuarios' %}active{% endif %}">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -169,6 +170,8 @@
                 Usuarios
               </a>
             </li>
+            {% endif %}
+            {% if has_permission(request, 'roles.view') %}
             <li class="sidebar-menu-item">
               <a href="/roles" class="sidebar-menu-link {% if active_page == 'roles' %}active{% endif %}">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -177,6 +180,8 @@
                 Roles
               </a>
             </li>
+            {% endif %}
+            {% if has_permission(request, 'roles.view') %}
             <li class="sidebar-menu-item">
               <a href="/permisos" class="sidebar-menu-link {% if active_page == 'permisos' %}active{% endif %}">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -185,6 +190,8 @@
                 Permisos
               </a>
             </li>
+            {% endif %}
+            {% if has_permission(request, 'audit.view') %}
             <li class="sidebar-menu-item">
               <a href="/auditoria" class="sidebar-menu-link {% if active_page == 'auditoria' %}active{% endif %}">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -193,6 +200,8 @@
                 Auditoría
               </a>
             </li>
+            {% endif %}
+            {% if has_permission(request, 'config.manage') %}
             <li class="sidebar-menu-item">
               <a href="/configuracion" class="sidebar-menu-link {% if active_page == 'configuracion' %}active{% endif %}">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -202,6 +211,7 @@
                 Configuración
               </a>
             </li>
+            {% endif %}
           </ul>
         </div>
         
@@ -219,7 +229,16 @@
         <div>
           <h1 class="header-title">{% block page_title %}Dashboard{% endblock %}</h1>
           <nav class="header-breadcrumb">
-            <a href="/">Inicio</a> &gt; {% block breadcrumb %}Dashboard{% endblock %}
+            <a href="/">Inicio</a>
+            {% set module = breadcrumb_module(active_page) if active_page else '' %}
+            {% set page_title_text = self.page_title() %}
+            {% if module and not page_title_text.lower().startswith(module.lower()) %}
+              &nbsp;&gt;&nbsp; <span class="breadcrumb-module">{{ module }}</span>
+              &nbsp;&gt;&nbsp;
+            {% elif module %}
+              &nbsp;&gt;&nbsp;
+            {% endif %}
+            {% block breadcrumb %}{{ page_title_text }}{% endblock %}
           </nav>
         </div>
       </div>
@@ -263,7 +282,7 @@
                x-transition:leave-end="transform opacity-0 scale-95"
                class="header-user-dropdown"
                style="display: none;">
-            <a href="/perfil" class="dropdown-item">
+            <a href="/mi-perfil" class="dropdown-item">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
               </svg>

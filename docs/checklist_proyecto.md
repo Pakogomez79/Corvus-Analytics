@@ -1,7 +1,7 @@
 # Corvus XBRL Enterprise - Checklist Completo del Proyecto
 
 **Fecha de creación:** 10 de diciembre de 2025  
-**Última actualización:** 10 de diciembre de 2025  
+**Última actualización:** 11 de diciembre de 2025  
 **Versión:** 1.0
 
 ---
@@ -10,15 +10,15 @@
 
 | Módulo | Completado | Total | Progreso |
 |--------|------------|-------|----------|
-| 🔐 Administración | 7 | 21 | 🟨 33% |
-| 📋 Configuración XBRL | 0 | 25 | ⬜ 0% |
-| 📤 Carga de Datos | 0 | 18 | ⬜ 0% |
-| 📊 Análisis Financiero | 0 | 32 | ⬜ 0% |
-| 📈 Dashboard | 0 | 12 | ⬜ 0% |
-| 🔔 Alertas | 0 | 14 | ⬜ 0% |
-| 📄 Exportación | 0 | 9 | ⬜ 0% |
-| 🖥️ Infraestructura | 11 | 15 | 🟩 73% |
-| **TOTAL** | **18** | **146** | **12%** |
+| 🔐 Administración | 24 | 33 | 🟩 73% |
+| 📋 Configuración XBRL | 0 | 34 | ⬜ 0% |
+| 📤 Carga de Datos | 0 | 23 | ⬜ 0% |
+| 📊 Análisis Financiero | 0 | 55 | ⬜ 0% |
+| 📈 Dashboard | 7 | 15 | 🟨 47% |
+| 🔔 Alertas | 0 | 18 | ⬜ 0% |
+| 📄 Exportación | 0 | 14 | ⬜ 0% |
+| 🖥️ Infraestructura | 11 | 16 | 🟩 69% |
+| **TOTAL** | **42** | **208** | **20%** |
 
 ---
 
@@ -61,41 +61,33 @@
 - [x] Cambio de contraseña con validación de fortaleza
 
 ### 1.2 Gestión de Usuarios
-- [ ] Listado de usuarios (tabla con filtros)
-- [ ] Crear usuario (formulario)
-- [ ] Editar usuario
-- [ ] Activar/Desactivar usuario
-- [ ] Reset de contraseña por admin
-- [ ] Perfil de usuario (ver/editar propio)
-- [ ] Avatar/Iniciales de usuario
+- [x] Listado de usuarios (tabla con filtros)
+- [x] Crear usuario (formulario)
+- [x] Editar usuario
+- [x] Activar/Desactivar usuario
+- [x] Reset de contraseña por admin
+- [x] Perfil de usuario (ver/editar propio)
 
 ### 1.3 Gestión de Roles
-- [ ] Listado de roles
-- [ ] Crear rol
-- [ ] Editar rol
+- [x] Listado de roles
+- [x] Crear rol
+- [x] Editar rol
 - [ ] Eliminar rol (con validación de usuarios asignados)
-- [ ] Roles predefinidos: Admin, Analista, Auditor, Consultor
+- [x] Roles predefinidos: Admin, Analista, Auditor, Consultor
 
 ### 1.4 Gestión de Permisos
 - [ ] Matriz de permisos (rol × módulo × acción)
-- [ ] Acciones: Ver, Crear, Editar, Eliminar, Exportar
-- [ ] Decorador de permisos en rutas
+- [ ] Acciones: Ver, Crear, Editar, Eliminar, Exportar (soporte backend presente)
+- [x] Decorador de permisos en rutas
 - [ ] Ocultamiento de menús según permisos
 
 ### 1.5 Bitácora de Auditoría
-- [ ] Modelo AuditLog en BD
-- [ ] Registro automático de login/logout
-- [ ] Registro de acciones CRUD
-- [ ] Registro de IP y user-agent
-- [ ] Listado de logs con filtros (usuario, fecha, módulo)
-- [ ] Exportación de logs
-### 1.5 Bitácora de Auditoría
-- [ ] Modelo AuditLog en BD
+- [x] Modelo AuditLog en BD
 - [x] Registro automático de login/logout
-- [ ] Registro de acciones CRUD
-- [ ] Registro de IP y user-agent
-- [ ] Listado de logs con filtros (usuario, fecha, módulo)
-- [ ] Exportación de logs
+- [x] Registro de acciones CRUD
+- [x] Registro de IP y user-agent
+- [x] Listado de logs con filtros (usuario, fecha, módulo)
+- [x] Exportación de logs
 
 ### 1.6 Configuración General
 - [ ] Logo de empresa (upload)

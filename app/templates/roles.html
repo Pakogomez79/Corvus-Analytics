@@ -1,0 +1,91 @@
+{% extends "layout.html" %}
+
+{% block title %}Roles - Corvus International Group{% endblock %}
+{% block page_title %}Roles{% endblock %}
+{% block breadcrumb %}Administración &gt; Roles{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <div>
+      <h3 class="card-title">Listado de Roles</h3>
+      <p class="card-subtitle">Roles del sistema</p>
+    </div>
+    <div style="display:flex; gap:1rem; align-items:center;">
+      <form method="get" action="/roles" style="display:flex; gap:0.75rem; align-items:center;">
+        <input type="search" name="q" placeholder="Buscar rol..." value="{{ q }}" style="padding:0.5rem 0.75rem; border:1px solid #e2e8f0; border-radius:6px;" />
+        <button class="btn btn-secondary" type="submit">Buscar</button>
+      </form>
+      <a href="/roles/create" class="btn btn-accent">Crear Rol</a>
+    </div>
+  </div>
+  {% if error %}
+  <div class="card-error" style="background:#ffe6e6; border:1px solid #ffb3b3; padding:0.75rem; margin:0.75rem; border-radius:6px; color:#a00;">{{ error }}</div>
+  {% endif %}
+
+  <div class="table-container">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Nombre</th>
+          <th>Permisos</th>
+          <th>Acción</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if roles %}
+          {% for r in roles %}
+            <tr>
+              <td><strong>{{ r.name }}</strong></td>
+              <td style="color:var(--text-secondary);">{{ r.permissions or '-' }}</td>
+              <td>
+                <div style="display:flex; gap:0.5rem; align-items:center;">
+                  <a href="/roles/{{ r.id }}/edit" title="Editar" style="display:inline-flex; align-items:center; padding:0.25rem;">✏️</a>
+                  {% set users_count = r.users_count if r.users_count is defined else 0 %}
+                  <form method="post" action="/roles/{{ r.id }}/delete" style="display:inline-flex;" onsubmit="if({{ users_count }} > 0){alert('No se puede eliminar: hay '+{{ users_count }}+' usuarios asignados'); return false;} return confirm('Eliminar rol?');">
+                    <button type="submit" class="btn btn-outline" style="padding:0.25rem 0.5rem;">🗑️</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="3" style="text-align:center; padding:2rem; color:var(--text-secondary);">No hay roles</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  <div style="display:flex; justify-content:space-between; align-items:center; padding-top:0.75rem;">
+    <div style="color:var(--text-secondary);">Mostrando {{ (page - 1) * per_page + 1 }} - {{ (page - 1) * per_page + roles|length }} de {{ total }}</div>
+    <div>
+      <nav aria-label="Paginación">
+        <ul style="display:flex; gap:0.5rem; list-style:none; padding:0; margin:0;">
+          {% if page > 1 %}
+          <li><a class="btn btn-outline" href="/roles?page={{ page - 1 }}{% if q %}&q={{ q }}{% endif %}">Anterior</a></li>
+          {% else %}
+          <li><button class="btn btn-outline" disabled>Anterior</button></li>
+          {% endif %}
+
+          {% for p in range(1, pages + 1) %}
+            {% if p == page %}
+              <li><button class="btn btn-primary" disabled>{{ p }}</button></li>
+            {% else %}
+              <li><a class="btn btn-secondary" href="/roles?page={{ p }}{% if q %}&q={{ q }}{% endif %}">{{ p }}</a></li>
+            {% endif %}
+          {% endfor %}
+
+          {% if page < pages %}
+          <li><a class="btn btn-outline" href="/roles?page={{ page + 1 }}{% if q %}&q={{ q }}{% endif %}">Siguiente</a></li>
+          {% else %}
+          <li><button class="btn btn-outline" disabled>Siguiente</button></li>
+          {% endif %}
+        </ul>
+      </nav>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

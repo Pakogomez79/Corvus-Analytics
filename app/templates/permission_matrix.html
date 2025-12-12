@@ -1,0 +1,39 @@
+{% extends "layout.html" %}
+
+{% block title %}Matriz de Permisos{% endblock %}
+
+{% block content %}
+<h2>Matriz de Permisos</h2>
+<p>Marque los permisos que desea asignar a cada rol. Guardar aplicará los cambios a la base de datos.</p>
+<form method="post" action="/permisos/matriz/guardar">
+  <div class="table-responsive">
+    <table class="matrix-table">
+      <thead>
+        <tr>
+          <th>Permiso \ Rol</th>
+          {% for r in roles %}
+            <th>{{ r.name }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in permissions %}
+          <tr>
+            <td class="perm-name">{{ p.name }}<br><small>{{ p.description or '' }}</small></td>
+            {% for r in roles %}
+              <td class="perm-cell">
+                {% set checked = (r.id, p.id) in assigned %}
+                <input type="checkbox" name="assign_{{ r.id }}_{{ p.id }}" {% if checked %}checked{% endif %} />
+              </td>
+            {% endfor %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div style="margin-top: 1rem;">
+    <button class="btn btn-primary" type="submit">Guardar matriz</button>
+    <a class="btn" href="/permisos">Volver</a>
+  </div>
+</form>
+{% endblock %}

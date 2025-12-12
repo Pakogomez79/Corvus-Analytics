@@ -4,24 +4,26 @@ from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import List, Optional
+import json
 
 import pandas as pd
 import pdfkit
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile, Cookie
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile, Cookie, BackgroundTasks
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import or_
+from sqlalchemy import or_, text
 from sqlalchemy.orm import joinedload
 from xhtml2pdf import pisa
 
 from .auth import authenticate_user, create_access_token, decode_token, change_password, validate_password_strength, create_user, get_password_hash, has_permission
+from .audit import enqueue_audit
 from .canonical_mapping import resolve_canonical_concept
 from .db import SessionLocal, engine
 from .ingest_arelle import parse_xbrl
 from .logger import get_logger, setup_application_logging
-from .models import Base, Entity, File as FileModel, Fact, Period, User, Role, UserRole
+from .models import Base, Entity, File as FileModel, Fact, Period, User, Role, UserRole, Permission, RolePermission
 from .pdf_config import PDF_OPTIONS, get_pdfkit_config
 from .schemas import FileResponse
 
@@ -31,6 +33,116 @@ logger = setup_application_logging()
 BASE_DIR = Path(__file__).resolve().parent
 TEMPLATES = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
+# Path para almacenar configuración simple en JSON
+SETTINGS_DIR = BASE_DIR / "config"
+SETTINGS_FILE = SETTINGS_DIR / "settings.json"
+
+def _ensure_settings_dir():
+    try:
+        SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+
+def load_settings():
+    _ensure_settings_dir()
+    if not SETTINGS_FILE.exists():
+        return {}
+    try:
+        with open(SETTINGS_FILE, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception:
+        return {}
+
+def save_settings(data: dict):
+    _ensure_settings_dir()
+    try:
+        with open(SETTINGS_FILE, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        logger.exception("Error guardando settings: %s", e)
+        return False
+
+# Helper disponible en plantillas para comprobar permisos dinámicamente
+def _template_has_permission(request: Request, permission_name: str) -> bool:
+    # intenta leer token desde la cookie y verificar permiso en DB
+    access_token = request.cookies.get('access_token') or ''
+    token = access_token[7:] if access_token.startswith('Bearer ') else access_token
+    payload = decode_token(token) if token else None
+    if not payload:
+        return False
+    user_id = payload.get('user_id')
+    if not user_id:
+        return False
+    db = SessionLocal()
+    try:
+        return has_permission(db, user_id, permission_name)
+    finally:
+        db.close()
+
+# Registrar helper en el entorno de Jinja
+try:
+    TEMPLATES.env.globals['has_permission'] = _template_has_permission
+except Exception:
+    # en entornos donde env no está disponible, ignorar silenciosamente
+    pass
+
+
+# Helper para determinar el módulo del breadcrumb a partir de active_page
+def _breadcrumb_module(active_page: Optional[str]) -> str:
+    if not active_page:
+        return ""
+    mapping = {
+        # Principal
+        'dashboard': 'Principal',
+        # XBRL
+        'upload': 'XBRL',
+        'entidades': 'XBRL',
+        'archivos': 'XBRL',
+        # Reportes / Análisis
+        'comparativos': 'Reportes',
+        'balance': 'Reportes',
+        'resultados': 'Reportes',
+        'indicadores': 'Reportes',
+        # Administración
+        'usuarios': 'Administración',
+        'users': 'Administración',
+        'roles': 'Administración',
+        'permisos': 'Administración',
+        'auditoria': 'Administración',
+        'configuracion': 'Administración',
+        # Export / Otros
+        'upload': 'XBRL',
+    }
+    return mapping.get(active_page, active_page.capitalize())
+
+try:
+    TEMPLATES.env.globals['breadcrumb_module'] = _breadcrumb_module
+except Exception:
+    pass
+
+
+def _get_request_ip_ua(request: Optional[Request]):
+    """Extrae IP y User-Agent de la request, respetando X-Forwarded-For si existe."""
+    if not request:
+        return None, None
+    xff = request.headers.get('x-forwarded-for') or request.headers.get('X-Forwarded-For')
+    if xff:
+        ip = xff.split(',')[0].strip()
+    else:
+        client = getattr(request, 'client', None)
+        ip = client.host if client is not None else None
+    ua = request.headers.get('user-agent')
+    return ip, ua
+
+
+def _enqueue_with_request(background_tasks: BackgroundTasks, request: Optional[Request], **kwargs):
+    ip, ua = _get_request_ip_ua(request)
+    try:
+        enqueue_audit(background_tasks, ip_address=ip, user_agent=ua, **kwargs)
+    except Exception:
+        # no propagar errores de auditoría
+        pass
 # Instancia de FastAPI y configuración
 app = FastAPI(title="Corvus International Group")
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
@@ -113,9 +225,10 @@ def api_session(current_user: Optional[dict] = Depends(get_current_user)):
 @app.post("/login", response_class=HTMLResponse)
 async def login(
     request: Request,
+    background_tasks: BackgroundTasks,
     username: str = Form(...),
     password: str = Form(...),
-    db = Depends(get_db)
+    db = Depends(get_db),
 ):
     """Procesa el login del usuario y genera token JWT"""
     
@@ -124,6 +237,11 @@ async def login(
     
     if not user:
         logger.warning(f"Intento de login fallido para usuario: {username}")
+        try:
+            if background_tasks is not None:
+                _enqueue_with_request(background_tasks, request, actor_username=username, action='auth.login.failure', category='auth', mensaje_es=f"Intento de acceso fallido para '{username}'")
+        except Exception:
+            pass
         return TEMPLATES.TemplateResponse("login.html", {
             "request": request,
             "error": "Usuario o contraseña incorrectos"
@@ -148,13 +266,24 @@ async def login(
         samesite="lax"
     )
     
+    try:
+        if background_tasks is not None:
+                _enqueue_with_request(background_tasks, request, actor_id=user.id, actor_username=user.username, action='auth.login.success', category='auth', resource_type='user', resource_id=str(user.id), mensaje_es=f"{user.username} inició sesión")
+    except Exception:
+        pass
+
     return response
 
 
 @app.get("/logout")
-async def logout(request: Request):
+async def logout(request: Request, background_tasks: BackgroundTasks, current_user: Optional[dict] = Depends(get_current_user)):
     """Cierra la sesión del usuario eliminando el token y fuerza no-cache"""
     logger.info("Usuario cerró sesión")
+    try:
+        if current_user and background_tasks is not None:
+            _enqueue_with_request(background_tasks, request, actor_id=current_user.get("user_id"), actor_username=current_user.get("sub"), action='auth.logout', category='auth', mensaje_es=f"{current_user.get('sub')} cerró sesión")
+    except Exception:
+        pass
     response = RedirectResponse(url="/login", status_code=303)
     response.delete_cookie(key="access_token")
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
@@ -189,14 +318,62 @@ async def change_password_page(
     return response
 
 
+@app.get("/configuracion", response_class=HTMLResponse)
+def configuracion_page(
+    request: Request,
+    current_user: Optional[dict] = Depends(get_current_user),
+    permission_ok: bool = Depends(require_permission('config.manage')),
+):
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+
+    settings = load_settings() or {}
+    return TEMPLATES.TemplateResponse("configuracion.html", {"request": request, "settings": settings, "active_page": "configuracion"})
+
+
+@app.post("/configuracion", response_class=HTMLResponse)
+def configuracion_submit(
+    request: Request,
+    company_name: Optional[str] = Form(None),
+    date_format: Optional[str] = Form(None),
+    currency: Optional[str] = Form(None),
+    logo_url: Optional[str] = Form(None),
+    current_user: Optional[dict] = Depends(get_current_user),
+    background_tasks: BackgroundTasks = None,
+):
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+
+    settings = load_settings() or {}
+    settings.update({
+        "company_name": company_name or "",
+        "date_format": date_format or "YYYY-MM-DD",
+        "currency": currency or "USD",
+        "logo_url": logo_url or "",
+    })
+
+    ok = save_settings(settings)
+    if ok:
+        try:
+            actor_id = current_user.get("user_id")
+            actor_username = current_user.get("sub") or current_user.get("username")
+            _enqueue_with_request(background_tasks, request, actor_id=actor_id, actor_username=actor_username, action='config.update', category='config', resource_type='settings', resource_id='site', mensaje_es=f"{actor_username} actualizó configuración general")
+        except Exception:
+            pass
+        return TEMPLATES.TemplateResponse("configuracion.html", {"request": request, "settings": settings, "success": "Configuración guardada correctamente", "active_page": "configuracion"})
+
+    return TEMPLATES.TemplateResponse("configuracion.html", {"request": request, "settings": settings, "error": "Error guardando configuración", "active_page": "configuracion"})
+
+
 @app.post("/change-password", response_class=HTMLResponse)
 async def change_password_submit(
     request: Request,
+    background_tasks: BackgroundTasks,
     current_password: str = Form(...),
     new_password: str = Form(...),
     confirm_password: str = Form(...),
     current_user: Optional[dict] = Depends(get_current_user),
-    db = Depends(get_db)
+    db = Depends(get_db),
 ):
     """Procesa el cambio de contraseña"""
     if not current_user:
@@ -205,7 +382,7 @@ async def change_password_submit(
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
         return response
-    
+
     # Validar que las nuevas contraseñas coincidan
     if new_password != confirm_password:
         response = TEMPLATES.TemplateResponse("change_password.html", {
@@ -216,7 +393,7 @@ async def change_password_submit(
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
         return response
-    
+
     # Validar fortaleza de la contraseña
     is_valid, message = validate_password_strength(new_password)
     if not is_valid:
@@ -228,13 +405,20 @@ async def change_password_submit(
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
         return response
-    
+
     # Cambiar contraseña
     user_id = current_user.get("user_id")
     success = change_password(db, user_id, current_password, new_password)
-    
+
     if success:
         logger.info(f"Contraseña cambiada para usuario ID: {user_id}")
+        try:
+            actor_id = current_user.get("user_id") if current_user else None
+            actor_username = current_user.get("sub") if current_user else None
+            if background_tasks is not None:
+                _enqueue_with_request(background_tasks, request, actor_id=actor_id, actor_username=actor_username, action='user.password.change', category='users', resource_type='user', resource_id=str(user_id), mensaje_es=f"{actor_username} cambió su contraseña")
+        except Exception:
+            pass
         # Forzar re-login: eliminar cookie y redirigir a login
         response = RedirectResponse(url="/login", status_code=303)
         response.delete_cookie(key="access_token")
@@ -242,7 +426,7 @@ async def change_password_submit(
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
         return response
-        
+
     else:
         response = TEMPLATES.TemplateResponse("change_password.html", {
             "request": request,
@@ -414,6 +598,148 @@ def home(
     return response
 
 
+@app.get("/mi-perfil", response_class=HTMLResponse)
+def my_profile_page(
+    request: Request,
+    current_user: Optional[dict] = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Página para ver/editar el propio perfil del usuario."""
+    if not current_user:
+        response = RedirectResponse(url="/login", status_code=303)
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+
+    user_id = current_user.get("user_id")
+    user = db.query(User).filter(User.id == user_id).options(joinedload(User.roles).joinedload(UserRole.role)).first()
+    if not user:
+        return RedirectResponse(url="/login", status_code=303)
+
+    # Construir payload de usuario para la plantilla
+    roles = [ur.role.name for ur in user.roles if ur.role]
+    full_name = "".join(filter(None, [user.first_name or "", (" " + user.last_name) if user.last_name else ""]))
+    if not full_name.strip():
+        full_name = user.username
+    # Calcular iniciales: preferir nombre + apellido, fallback a primeras letras del username
+    initials = None
+    if user.first_name and user.last_name:
+        initials = (user.first_name[:1] + user.last_name[:1]).upper()
+    elif user.first_name:
+        initials = user.first_name[:2].upper()
+    else:
+        initials = (user.username[:2] if user.username else "US").upper()
+
+    user_payload = {
+        "id": user.id,
+        "username": user.username,
+        "first_name": user.first_name,
+        "last_name": user.last_name,
+        "phone": user.phone,
+        "is_active": bool(user.is_active),
+        "must_change_password": bool(user.must_change_password),
+        "created_at": user.created_at.strftime("%Y-%m-%d %H:%M") if user.created_at else None,
+        "roles": roles,
+        "name": full_name,
+        "initials": initials,
+    }
+
+    return TEMPLATES.TemplateResponse("user_profile.html", {"request": request, "user": user_payload})
+
+
+@app.post("/mi-perfil", response_class=HTMLResponse)
+def my_profile_submit(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    first_name: Optional[str] = Form(None),
+    last_name: Optional[str] = Form(None),
+    phone: Optional[str] = Form(None),
+    current_user: Optional[dict] = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    if not current_user:
+        response = RedirectResponse(url="/login", status_code=303)
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+
+    user_id = current_user.get("user_id")
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        return RedirectResponse(url="/login", status_code=303)
+
+    try:
+        user.first_name = first_name
+        user.last_name = last_name
+        user.phone = phone
+        db.commit()
+        try:
+            actor_id = user.id
+            actor_username = user.username
+            _enqueue_with_request(background_tasks, request, actor_id=actor_id, actor_username=actor_username, action='user.profile.update', category='users', resource_type='user', resource_id=str(user.id), mensaje_es=f"{actor_username} actualizó su perfil")
+        except Exception:
+            pass
+    except Exception as e:
+        db.rollback()
+        # Recalcular payload para renderizar con los valores intentados
+        roles = [ur.role.name for ur in user.roles if ur.role]
+        full_name = "".join(filter(None, [first_name or "", (" " + (last_name or "")) if last_name else ""]))
+        if not full_name.strip():
+            full_name = user.username
+        initials = None
+        if first_name and last_name:
+            initials = (first_name[:1] + last_name[:1]).upper()
+        elif first_name:
+            initials = first_name[:2].upper()
+        else:
+            initials = (user.username[:2] if user.username else "US").upper()
+
+        user_payload = {
+            "id": user.id,
+            "username": user.username,
+            "first_name": first_name,
+            "last_name": last_name,
+            "phone": phone,
+            "is_active": bool(user.is_active),
+            "must_change_password": bool(user.must_change_password),
+            "created_at": user.created_at.strftime("%Y-%m-%d %H:%M") if user.created_at else None,
+            "roles": roles,
+            "name": full_name,
+            "initials": initials,
+        }
+        return TEMPLATES.TemplateResponse("user_profile.html", {"request": request, "user": user_payload, "error": str(e)})
+
+    # Recalcular payload con valores guardados
+    roles = [ur.role.name for ur in user.roles if ur.role]
+    full_name = "".join(filter(None, [user.first_name or "", (" " + user.last_name) if user.last_name else ""]))
+    if not full_name.strip():
+        full_name = user.username
+    if user.first_name and user.last_name:
+        initials = (user.first_name[:1] + user.last_name[:1]).upper()
+    elif user.first_name:
+        initials = user.first_name[:2].upper()
+    else:
+        initials = (user.username[:2] if user.username else "US").upper()
+
+    user_payload = {
+        "id": user.id,
+        "username": user.username,
+        "first_name": user.first_name,
+        "last_name": user.last_name,
+        "phone": user.phone,
+        "is_active": bool(user.is_active),
+        "must_change_password": bool(user.must_change_password),
+        "created_at": user.created_at.strftime("%Y-%m-%d %H:%M") if user.created_at else None,
+        "roles": roles,
+        "name": full_name,
+        "initials": initials,
+    }
+
+    return TEMPLATES.TemplateResponse("user_profile.html", {"request": request, "user": user_payload, "success": "Perfil actualizado correctamente"})
+
+
 # ============================================================================
 # RUTAS DE GESTIÓN DE USUARIOS (CRUD)
 # ============================================================================
@@ -503,6 +829,7 @@ def users_create_page(request: Request, current_user: Optional[dict] = Depends(g
 @app.post("/users/create", response_class=HTMLResponse)
 def users_create_submit(
     request: Request,
+    background_tasks: BackgroundTasks,
     username: str = Form(...),
     password: str = Form(...),
     first_name: Optional[str] = Form(None),
@@ -539,6 +866,13 @@ def users_create_submit(
             db.add(assoc)
 
         db.commit()
+        try:
+            actor_id = current_user.get("user_id") if current_user else None
+            actor_username = current_user.get("sub") if current_user else None
+            if background_tasks is not None:
+                _enqueue_with_request(background_tasks, request, actor_id=actor_id, actor_username=actor_username, action='user.create', category='users', resource_type='user', resource_id=str(new_user.id), mensaje_es=f"{actor_username} creó el usuario {username}")
+        except Exception:
+            pass
     except Exception as e:
         db.rollback()
         return TEMPLATES.TemplateResponse("user_form.html", {"request": request, "action": "create", "error": str(e), "user": {"username": username, "is_active": is_active, "roles": roles}} , status_code=400)
@@ -564,6 +898,7 @@ def users_edit_page(request: Request, user_id: int, current_user: Optional[dict]
 @app.post("/users/{user_id}/edit", response_class=HTMLResponse)
 def users_edit_submit(
     request: Request,
+    background_tasks: BackgroundTasks,
     user_id: int,
     username: str = Form(...),
     password: Optional[str] = Form(None),
@@ -609,6 +944,13 @@ def users_edit_submit(
             db.add(assoc)
 
         db.commit()
+        try:
+            actor_id = current_user.get("user_id") if current_user else None
+            actor_username = current_user.get("sub") if current_user else None
+            if background_tasks is not None:
+                _enqueue_with_request(background_tasks, request, actor_id=actor_id, actor_username=actor_username, action='user.update', category='users', resource_type='user', resource_id=str(user.id), mensaje_es=f"{actor_username} actualizó el usuario {username}")
+        except Exception:
+            pass
     except Exception as e:
         db.rollback()
         return TEMPLATES.TemplateResponse("user_form.html", {"request": request, "action": "edit", "error": str(e), "user": {"id": user.id, "username": username, "is_active": is_active, "roles": roles}} , status_code=400)
@@ -617,7 +959,7 @@ def users_edit_submit(
 
 
 @app.post("/users/{user_id}/delete")
-def users_delete(request: Request, user_id: int, current_user: Optional[dict] = Depends(get_current_user), db=Depends(get_db), permission_ok: bool = Depends(require_permission('users.manage'))):
+def users_delete(request: Request, background_tasks: BackgroundTasks, user_id: int, current_user: Optional[dict] = Depends(get_current_user), db=Depends(get_db), permission_ok: bool = Depends(require_permission('users.manage'))):
     if not current_user:
         return RedirectResponse(url="/login", status_code=303)
     if not _require_admin(current_user, db):
@@ -628,8 +970,16 @@ def users_delete(request: Request, user_id: int, current_user: Optional[dict] = 
         return JSONResponse(status_code=404, content={"detail": "Usuario no encontrado"})
 
     try:
+        username = user.username
         db.delete(user)
         db.commit()
+        try:
+            actor_id = current_user.get("user_id") if current_user else None
+            actor_username = current_user.get("sub") if current_user else None
+            if background_tasks is not None:
+                _enqueue_with_request(background_tasks, request, actor_id=actor_id, actor_username=actor_username, action='user.delete', category='users', resource_type='user', resource_id=str(user_id), mensaje_es=f"{actor_username} eliminó el usuario {username}")
+        except Exception:
+            pass
     except Exception as e:
         db.rollback()
         return JSONResponse(status_code=500, content={"detail": str(e)})
@@ -656,6 +1006,643 @@ def usuarios_edit_alias(request: Request, user_id: int):
 @app.post("/usuarios/{user_id}/delete")
 def usuarios_delete_alias(request: Request, user_id: int):
     return RedirectResponse(url=f"/users/{user_id}/delete", status_code=303)
+
+
+# ============================================================================
+# RUTAS DE GESTIÓN DE ROLES
+# ============================================================================
+
+
+@app.get("/roles", response_class=HTMLResponse)
+def roles_page(
+    request: Request,
+    q: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    db=Depends(get_db),
+    permission_ok: bool = Depends(require_permission('roles.view')),
+    current_user: Optional[dict] = Depends(get_current_user),
+):
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+
+    if not _require_admin(current_user, db):
+        return TEMPLATES.TemplateResponse("dashboard.html", {"request": request, "error": "Acceso denegado"}, status_code=403)
+
+    query = db.query(Role)
+    if q:
+        like_q = f"%{q}%"
+        query = query.filter(Role.name.ilike(like_q))
+
+    total = query.count()
+    per_page = 10
+    pages = max(1, (total + per_page - 1) // per_page)
+    if page > pages:
+        page = pages
+
+    roles = query.order_by(Role.name).offset((page - 1) * per_page).limit(per_page).all()
+    roles_data = []
+    for r in roles:
+        perms = [rp.permission.name for rp in r.permissions if rp.permission]
+        roles_data.append({
+            "id": r.id,
+            "name": r.name,
+            "permissions": ", ".join(perms),
+        })
+
+    return TEMPLATES.TemplateResponse(
+        "roles.html",
+        {
+            "request": request,
+            "roles": roles_data,
+            "active_page": "roles",
+            "q": q or "",
+            "page": page,
+            "pages": pages,
+            "total": total,
+            "per_page": per_page,
+        },
+    )
+
+
+@app.get("/roles/create", response_class=HTMLResponse)
+def roles_create_page(request: Request, current_user: Optional[dict] = Depends(get_current_user), permission_ok: bool = Depends(require_permission('roles.manage'))):
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+
+    db = SessionLocal()
+    permissions = db.query(Permission).order_by(Permission.name).all()
+    perms_list = [p.name for p in permissions]
+    db.close()
+    return TEMPLATES.TemplateResponse("role_form.html", {"request": request, "action": "create", "role": None, "permissions": perms_list})
+
+
+@app.post("/roles/create", response_class=HTMLResponse)
+def roles_create_submit(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    name: str = Form(...),
+    permissions: Optional[str] = Form(""),
+    db=Depends(get_db),
+    current_user: Optional[dict] = Depends(get_current_user),
+):
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    if not _require_admin(current_user, db):
+        return TEMPLATES.TemplateResponse("dashboard.html", {"request": request, "error": "Acceso denegado"}, status_code=403)
+
+    try:
+        role = Role(name=name)
+        db.add(role)
+        db.commit()
+        try:
+            actor_id = current_user.get("user_id") if current_user else None
+            actor_username = current_user.get("sub") if current_user else None
+            if background_tasks is not None:
+                _enqueue_with_request(background_tasks, request, actor_id=actor_id, actor_username=actor_username, action='role.create', category='roles', resource_type='role', resource_id=str(role.id), mensaje_es=f"{actor_username} creó el rol {name}")
+        except Exception:
+            pass
+        db.refresh(role)
+
+        perm_names = [p.strip() for p in (permissions or "").split(",") if p.strip()]
+        for pn in perm_names:
+            perm = db.query(Permission).filter(Permission.name == pn).first()
+            if not perm:
+                perm = Permission(name=pn)
+                db.add(perm)
+                db.commit()
+                db.refresh(perm)
+            assoc = RolePermission(role_id=role.id, permission_id=perm.id)
+            db.add(assoc)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        return TEMPLATES.TemplateResponse("role_form.html", {"request": request, "action": "create", "error": str(e), "role": {"name": name, "permissions": permissions}}, status_code=400)
+
+    return RedirectResponse(url="/roles", status_code=303)
+
+
+@app.get("/roles/{role_id}/edit", response_class=HTMLResponse)
+def roles_edit_page(request: Request, role_id: int, current_user: Optional[dict] = Depends(get_current_user), db=Depends(get_db), permission_ok: bool = Depends(require_permission('roles.manage'))):
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    if not _require_admin(current_user, db):
+        return TEMPLATES.TemplateResponse("dashboard.html", {"request": request, "error": "Acceso denegado"}, status_code=403)
+
+    role = db.query(Role).filter(Role.id == role_id).first()
+    if not role:
+        return RedirectResponse(url="/roles", status_code=303)
+
+    perms = ", ".join([rp.permission.name for rp in role.permissions if rp.permission])
+    all_perms = [p.name for p in db.query(Permission).order_by(Permission.name).all()]
+    return TEMPLATES.TemplateResponse("role_form.html", {"request": request, "action": "edit", "role": {"id": role.id, "name": role.name, "permissions": perms}, "permissions": all_perms})
+
+
+@app.post("/roles/{role_id}/edit", response_class=HTMLResponse)
+def roles_edit_submit(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    role_id: int,
+    name: str = Form(...),
+    permissions: Optional[str] = Form(""),
+    db=Depends(get_db),
+    current_user: Optional[dict] = Depends(get_current_user),
+):
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    if not _require_admin(current_user, db):
+        return TEMPLATES.TemplateResponse("dashboard.html", {"request": request, "error": "Acceso denegado"}, status_code=403)
+
+    role = db.query(Role).filter(Role.id == role_id).first()
+    if not role:
+        return RedirectResponse(url="/roles", status_code=303)
+
+    try:
+        role.name = name
+        # Update permissions: remove existing and add new
+        db.query(RolePermission).filter(RolePermission.role_id == role.id).delete()
+        perm_names = [p.strip() for p in (permissions or "").split(",") if p.strip()]
+        for pn in perm_names:
+            perm = db.query(Permission).filter(Permission.name == pn).first()
+            if not perm:
+                perm = Permission(name=pn)
+                db.add(perm)
+                db.commit()
+                db.refresh(perm)
+            assoc = RolePermission(role_id=role.id, permission_id=perm.id)
+            db.add(assoc)
+        db.commit()
+        try:
+            actor_id = current_user.get("user_id") if current_user else None
+            actor_username = current_user.get("sub") if current_user else None
+            if background_tasks is not None:
+                _enqueue_with_request(background_tasks, request, actor_id=actor_id, actor_username=actor_username, action='role.update', category='roles', resource_type='role', resource_id=str(role.id), mensaje_es=f"{actor_username} actualizó el rol {name}")
+        except Exception:
+            pass
+    except Exception as e:
+        db.rollback()
+        return TEMPLATES.TemplateResponse("role_form.html", {"request": request, "action": "edit", "error": str(e), "role": {"id": role.id, "name": name, "permissions": permissions}}, status_code=400)
+
+    return RedirectResponse(url="/roles", status_code=303)
+
+
+@app.post("/roles/{role_id}/delete")
+def roles_delete(request: Request, background_tasks: BackgroundTasks, role_id: int, current_user: Optional[dict] = Depends(get_current_user), db=Depends(get_db), permission_ok: bool = Depends(require_permission('roles.manage'))):
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    if not _require_admin(current_user, db):
+        return JSONResponse(status_code=403, content={"detail": "Acceso denegado"})
+
+    role = db.query(Role).filter(Role.id == role_id).first()
+    if not role:
+        return JSONResponse(status_code=404, content={"detail": "Rol no encontrado"})
+
+    # Verificar usuarios asignados al rol
+    assigned_count = db.query(UserRole).filter(UserRole.role_id == role.id).count()
+    if assigned_count > 0:
+        # Preparar lista de roles para re-renderizar la página con mensaje de error
+        query = db.query(Role)
+        total = query.count()
+        per_page = 10
+        pages = max(1, (total + per_page - 1) // per_page)
+        page = 1
+        roles = query.order_by(Role.name).offset((page - 1) * per_page).limit(per_page).all()
+        roles_data = []
+        for r in roles:
+            perms = [rp.permission.name for rp in r.permissions if rp.permission]
+            users_cnt = db.query(UserRole).filter(UserRole.role_id == r.id).count()
+            roles_data.append({
+                "id": r.id,
+                "name": r.name,
+                "permissions": ", ".join(perms),
+                "users_count": users_cnt,
+            })
+        return TEMPLATES.TemplateResponse("roles.html", {"request": request, "roles": roles_data, "active_page": "roles", "q": "", "page": page, "pages": pages, "total": total, "per_page": per_page, "error": f"No se puede eliminar el rol '{role.name}': tiene {assigned_count} usuarios asignados"}, status_code=400)
+
+    try:
+        role_name = role.name
+        db.delete(role)
+        db.commit()
+        try:
+            actor_id = current_user.get("user_id") if current_user else None
+            actor_username = current_user.get("sub") if current_user else None
+            if background_tasks is not None:
+                _enqueue_with_request(background_tasks, request, actor_id=actor_id, actor_username=actor_username, action='role.delete', category='roles', resource_type='role', resource_id=str(role_id), mensaje_es=f"{actor_username} eliminó el rol {role_name}")
+        except Exception:
+            pass
+    except Exception as e:
+        db.rollback()
+        return JSONResponse(status_code=500, content={"detail": str(e)})
+
+    return RedirectResponse(url="/roles", status_code=303)
+
+
+# ============================================================================
+# RUTAS DE GESTIÓN DE PERMISOS
+# ============================================================================
+
+
+@app.get("/permisos", response_class=HTMLResponse)
+def permisos_page(
+    request: Request,
+    q: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    db=Depends(get_db),
+    permission_ok: bool = Depends(require_permission('roles.view')),
+    current_user: Optional[dict] = Depends(get_current_user),
+):
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+
+    if not _require_admin(current_user, db):
+        return TEMPLATES.TemplateResponse("dashboard.html", {"request": request, "error": "Acceso denegado"}, status_code=403)
+
+    query = db.query(Permission)
+    if q:
+        like_q = f"%{q}%"
+        query = query.filter(Permission.name.ilike(like_q))
+
+    total = query.count()
+    per_page = 10
+    pages = max(1, (total + per_page - 1) // per_page)
+    if page > pages:
+        page = pages
+
+    perms = query.order_by(Permission.name).offset((page - 1) * per_page).limit(per_page).all()
+    perms_data = []
+    for p in perms:
+        perms_data.append({"id": p.id, "name": p.name, "description": p.description or ""})
+
+    return TEMPLATES.TemplateResponse("permisos.html", {"request": request, "permissions": perms_data, "active_page": "permisos", "q": q or "", "page": page, "pages": pages, "total": total, "per_page": per_page})
+
+
+@app.get("/permisos/create", response_class=HTMLResponse)
+def permisos_create_page(request: Request, current_user: Optional[dict] = Depends(get_current_user), permission_ok: bool = Depends(require_permission('roles.manage'))):
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    return TEMPLATES.TemplateResponse("permiso_form.html", {"request": request, "action": "create", "perm": None})
+
+
+@app.post("/permisos/create", response_class=HTMLResponse)
+def permisos_create_submit(request: Request, background_tasks: BackgroundTasks, name: str = Form(...), description: Optional[str] = Form(""), db=Depends(get_db), current_user: Optional[dict] = Depends(get_current_user)):
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    if not _require_admin(current_user, db):
+        return TEMPLATES.TemplateResponse("dashboard.html", {"request": request, "error": "Acceso denegado"}, status_code=403)
+
+    try:
+        perm = Permission(name=name, description=description)
+        db.add(perm)
+        db.commit()
+        try:
+            actor_id = current_user.get("user_id") if current_user else None
+            actor_username = current_user.get("sub") if current_user else None
+            if background_tasks is not None:
+                _enqueue_with_request(background_tasks, request, actor_id=actor_id, actor_username=actor_username, action='permission.create', category='permissions', resource_type='permission', resource_id=str(perm.id), mensaje_es=f"{actor_username} creó el permiso {name}")
+        except Exception:
+            pass
+    except Exception as e:
+        db.rollback()
+        return TEMPLATES.TemplateResponse("permiso_form.html", {"request": request, "action": "create", "error": str(e), "perm": {"name": name, "description": description}}, status_code=400)
+
+    return RedirectResponse(url="/permisos", status_code=303)
+
+
+@app.get("/permisos/{perm_id}/edit", response_class=HTMLResponse)
+def permisos_edit_page(request: Request, perm_id: int, current_user: Optional[dict] = Depends(get_current_user), db=Depends(get_db), permission_ok: bool = Depends(require_permission('roles.manage'))):
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    if not _require_admin(current_user, db):
+        return TEMPLATES.TemplateResponse("dashboard.html", {"request": request, "error": "Acceso denegado"}, status_code=403)
+
+    perm = db.query(Permission).filter(Permission.id == perm_id).first()
+    if not perm:
+        return RedirectResponse(url="/permisos", status_code=303)
+    return TEMPLATES.TemplateResponse("permiso_form.html", {"request": request, "action": "edit", "perm": {"id": perm.id, "name": perm.name, "description": perm.description}})
+
+
+@app.post("/permisos/{perm_id}/edit", response_class=HTMLResponse)
+def permisos_edit_submit(request: Request, background_tasks: BackgroundTasks, perm_id: int, name: str = Form(...), description: Optional[str] = Form(""), db=Depends(get_db), current_user: Optional[dict] = Depends(get_current_user)):
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    if not _require_admin(current_user, db):
+        return TEMPLATES.TemplateResponse("dashboard.html", {"request": request, "error": "Acceso denegado"}, status_code=403)
+
+    perm = db.query(Permission).filter(Permission.id == perm_id).first()
+    if not perm:
+        return RedirectResponse(url="/permisos", status_code=303)
+
+    try:
+        perm.name = name
+        perm.description = description
+        db.commit()
+        try:
+            actor_id = current_user.get("user_id") if current_user else None
+            actor_username = current_user.get("sub") if current_user else None
+            if background_tasks is not None:
+                _enqueue_with_request(background_tasks, request, actor_id=actor_id, actor_username=actor_username, action='permission.update', category='permissions', resource_type='permission', resource_id=str(perm.id), mensaje_es=f"{actor_username} actualizó el permiso {name}")
+        except Exception:
+            pass
+    except Exception as e:
+        db.rollback()
+        return TEMPLATES.TemplateResponse("permiso_form.html", {"request": request, "action": "edit", "error": str(e), "perm": {"id": perm.id, "name": name, "description": description}}, status_code=400)
+
+    return RedirectResponse(url="/permisos", status_code=303)
+
+
+@app.post("/permisos/{perm_id}/delete")
+def permisos_delete(request: Request, background_tasks: BackgroundTasks, perm_id: int, current_user: Optional[dict] = Depends(get_current_user), db=Depends(get_db), permission_ok: bool = Depends(require_permission('roles.manage'))):
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    if not _require_admin(current_user, db):
+        return JSONResponse(status_code=403, content={"detail": "Acceso denegado"})
+
+    perm = db.query(Permission).filter(Permission.id == perm_id).first()
+    if not perm:
+        return JSONResponse(status_code=404, content={"detail": "Permiso no encontrado"})
+
+    try:
+        perm_name = perm.name
+        db.delete(perm)
+        db.commit()
+        try:
+            actor_id = current_user.get("user_id") if current_user else None
+            actor_username = current_user.get("sub") if current_user else None
+            if background_tasks is not None:
+                _enqueue_with_request(background_tasks, request, actor_id=actor_id, actor_username=actor_username, action='permission.delete', category='permissions', resource_type='permission', resource_id=str(perm_id), mensaje_es=f"{actor_username} eliminó el permiso {perm_name}")
+        except Exception:
+            pass
+    except Exception as e:
+        db.rollback()
+        return JSONResponse(status_code=500, content={"detail": str(e)})
+
+    return RedirectResponse(url="/permisos", status_code=303)
+
+
+# =====================
+# MATRIZ DE PERMISOS (UI)
+# =====================
+
+
+@app.get("/permisos/matriz", response_class=HTMLResponse)
+def permisos_matriz_page(request: Request, db=Depends(get_db), current_user: Optional[dict] = Depends(get_current_user), permission_ok: bool = Depends(require_permission('roles.view'))):
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+
+    # Solo admin o roles con vista pueden acceder
+    if not _require_admin(current_user, db) and not has_permission(db, current_user.get('user_id'), 'roles.view'):
+        return TEMPLATES.TemplateResponse("dashboard.html", {"request": request, "error": "Acceso denegado"}, status_code=403)
+
+    roles = db.query(Role).order_by(Role.name).all()
+    permissions = db.query(Permission).order_by(Permission.name).all()
+
+    # Construir conjunto de asignaciones para la UI
+    assigned = set()
+    for rp in db.query(RolePermission).all():
+        if rp.role_id and rp.permission_id:
+            assigned.add((rp.role_id, rp.permission_id))
+
+    return TEMPLATES.TemplateResponse("permission_matrix.html", {"request": request, "roles": roles, "permissions": permissions, "assigned": assigned, "active_page": "permisos"})
+
+
+@app.post("/permisos/matriz/guardar", response_class=HTMLResponse)
+async def permisos_matriz_guardar(request: Request, background_tasks: BackgroundTasks, db=Depends(get_db), current_user: Optional[dict] = Depends(get_current_user)):
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+
+    # Solo admin puede modificar asignaciones
+    if not _require_admin(current_user, db):
+        return TEMPLATES.TemplateResponse("dashboard.html", {"request": request, "error": "Acceso denegado"}, status_code=403)
+
+    form = await request.form()
+    formdata = dict(form)
+
+    # Leer todos roles y permisos
+    roles = db.query(Role).all()
+    perms = db.query(Permission).all()
+
+    # Para cada combinación, comprobar si checkbox presente
+    new_assignments = set()
+    for r in roles:
+        for p in perms:
+            key = f"assign_{r.id}_{p.id}"
+            if key in formdata:
+                new_assignments.add((r.id, p.id))
+
+    # Borrar todas las asignaciones y reinsertar según nuevo conjunto (sencillo y seguro)
+    try:
+        db.query(RolePermission).delete()
+        db.commit()
+        for (rid, pid) in new_assignments:
+            db.add(RolePermission(role_id=rid, permission_id=pid))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        return TEMPLATES.TemplateResponse("permission_matrix.html", {"request": request, "roles": roles, "permissions": perms, "assigned": new_assignments, "error": str(e)})
+
+    try:
+        actor_id = current_user.get("user_id") if current_user else None
+        actor_username = current_user.get("sub") if current_user else None
+        if background_tasks is not None:
+            _enqueue_with_request(background_tasks, request, actor_id=actor_id, actor_username=actor_username, action='permission.matrix.update', category='permissions', resource_type='matrix', resource_id='', mensaje_es=f"{actor_username} actualizó la matriz de permisos")
+    except Exception:
+        pass
+
+    return RedirectResponse(url="/permisos/matriz", status_code=303)
+
+
+
+@app.get("/auditoria", response_class=HTMLResponse)
+def auditoria_page(
+    request: Request,
+    q: Optional[str] = Query(None),
+    user: Optional[str] = Query(None),
+    module: Optional[str] = Query(None),
+    date_from: Optional[date] = Query(None),
+    date_to: Optional[date] = Query(None),
+    page: int = Query(1, ge=1),
+    db=Depends(get_db),
+    permission_ok: bool = Depends(require_permission('audit.view')),
+    current_user: Optional[dict] = Depends(get_current_user),
+):
+    """Página de auditoría — muestra `mensaje_es` y `detalle_es` de la tabla `audit_logs`.
+    Requiere permiso `audit.view`.
+    """
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+
+    per_page = 10
+    params = {}
+    where_clauses = ["1=1"]
+    if q:
+        like_q = f"%{q}%"
+        params["like_q"] = like_q
+        where_clauses.append("(mensaje_es LIKE :like_q OR detalle_es LIKE :like_q OR actor_username LIKE :like_q OR action LIKE :like_q)")
+    if user:
+        params["actor"] = user
+        where_clauses.append("actor_username = :actor")
+    if module:
+        params["category"] = module
+        where_clauses.append("category = :category")
+    if date_from:
+        # inclusive start
+        params["date_from"] = date_from.isoformat()
+        where_clauses.append("created_at >= :date_from")
+    if date_to:
+        # make end exclusive by adding one day
+        params["date_to"] = (date_to + timedelta(days=1)).isoformat()
+        where_clauses.append("created_at < :date_to")
+
+    where_sql = " AND ".join(where_clauses)
+
+    # Count
+    count_sql = f"SELECT COUNT(*) as cnt FROM audit_logs WHERE {where_sql}"
+    try:
+        total_row = db.execute(text(count_sql), params).fetchone()
+        total = int(total_row[0]) if total_row is not None else 0
+    except Exception:
+        total = 0
+
+    pages = max(1, (total + per_page - 1) // per_page)
+    if page > pages:
+        page = pages
+
+    offset = (page - 1) * per_page
+
+    list_sql = (
+        "SELECT id, created_at, actor_username, action, category, resource_type, resource_id, mensaje_es, detalle_es "
+        f"FROM audit_logs WHERE {where_sql} ORDER BY created_at DESC LIMIT :limit OFFSET :offset"
+    )
+    params.update({"limit": per_page, "offset": offset})
+
+    try:
+        rows = db.execute(text(list_sql), params).fetchall()
+    except Exception:
+        rows = []
+
+    items = []
+    for r in rows:
+        items.append({
+            "id": r[0],
+            "created_at": r[1],
+            "actor_username": r[2],
+            "action": r[3],
+            "category": r[4],
+            "resource_type": r[5],
+            "resource_id": r[6],
+            "mensaje_es": r[7],
+            "detalle_es": r[8],
+        })
+
+    # Fetch filter lists for selects
+    try:
+        actor_rows = db.execute(text("SELECT DISTINCT actor_username FROM audit_logs WHERE actor_username IS NOT NULL ORDER BY actor_username")).fetchall()
+        actors = [a[0] for a in actor_rows if a[0]]
+    except Exception:
+        actors = []
+    try:
+        cat_rows = db.execute(text("SELECT DISTINCT category FROM audit_logs WHERE category IS NOT NULL ORDER BY category")).fetchall()
+        modules = [c[0] for c in cat_rows if c[0]]
+    except Exception:
+        modules = []
+
+    return TEMPLATES.TemplateResponse(
+        "auditoria.html",
+        {
+            "request": request,
+            "active_page": "auditoria",
+            "logs": items,
+            "per_page": per_page,
+            "q": q or "",
+            "user": user or "",
+            "module": module or "",
+            "date_from": date_from.isoformat() if date_from else "",
+            "date_to": date_to.isoformat() if date_to else "",
+            "actors": actors,
+            "modules": modules,
+            "page": page,
+            "pages": pages,
+            "total": total,
+        },
+    )
+
+
+@app.get("/auditoria/export")
+def auditoria_export(
+    request: Request,
+    q: Optional[str] = Query(None),
+    user: Optional[str] = Query(None),
+    module: Optional[str] = Query(None),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    db=Depends(get_db),
+    permission_ok: bool = Depends(require_permission('audit.view')),
+    current_user: Optional[dict] = Depends(get_current_user),
+):
+    params = {}
+    where_clauses = ["1=1"]
+    if q:
+        like_q = f"%{q}%"
+        params["like_q"] = like_q
+        where_clauses.append("(mensaje_es LIKE :like_q OR detalle_es LIKE :like_q OR actor_username LIKE :like_q OR action LIKE :like_q)")
+    if user:
+        params["actor"] = user
+        where_clauses.append("actor_username = :actor")
+    if module:
+        params["category"] = module
+        where_clauses.append("category = :category")
+    # Parse optional date strings (accept empty strings without failing)
+    parsed_from = None
+    parsed_to = None
+    if date_from:
+        try:
+            parsed_from = date.fromisoformat(date_from)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Formato inválido para 'date_from'. Use YYYY-MM-DD")
+    if date_to:
+        try:
+            parsed_to = date.fromisoformat(date_to)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Formato inválido para 'date_to'. Use YYYY-MM-DD")
+
+    if parsed_from:
+        params["date_from"] = parsed_from.isoformat()
+        where_clauses.append("created_at >= :date_from")
+    if parsed_to:
+        params["date_to"] = (parsed_to + timedelta(days=1)).isoformat()
+        where_clauses.append("created_at < :date_to")
+
+    where_sql = " AND ".join(where_clauses)
+    sql = f"SELECT uuid, actor_id, actor_username, action, category, resource_type, resource_id, ip_address, user_agent, request_id, duration_ms, mensaje_es, detalle_es, created_at FROM audit_logs WHERE {where_sql} ORDER BY created_at DESC"
+
+    try:
+        rs = db.execute(text(sql), params)
+    except Exception as exc:
+        try:
+            logger.exception("Error consultando logs: %s", exc)
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail=f"Error consultando logs: {str(exc)}")
+
+    def _iter_rows():
+        import csv
+        from io import StringIO
+
+        buf = StringIO()
+        writer = csv.writer(buf)
+        # header
+        writer.writerow(["uuid","actor_id","actor_username","action","category","resource_type","resource_id","ip_address","user_agent","request_id","duration_ms","mensaje_es","detalle_es","created_at"])
+        yield buf.getvalue()
+        buf.seek(0)
+        buf.truncate(0)
+
+        for row in rs:
+            values = [str(row[0] or ''), str(row[1] or ''), str(row[2] or ''), str(row[3] or ''), str(row[4] or ''), str(row[5] or ''), str(row[6] or ''), str(row[7] or ''), str(row[8] or ''), str(row[9] or ''), str(row[10] or ''), str(row[11] or ''), str(row[12] or ''), str(row[13] or '')]
+            writer.writerow(values)
+            yield buf.getvalue()
+            buf.seek(0)
+            buf.truncate(0)
+
+    return StreamingResponse(_iter_rows(), media_type='text/csv', headers={"Content-Disposition": "attachment; filename=auditoria_export.csv"})
 
 
 @app.get("/dashboard", response_class=HTMLResponse)

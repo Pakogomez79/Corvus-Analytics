@@ -1,0 +1,57 @@
+{% extends "layout.html" %}
+
+{% block title %}Configuración General{% endblock %}
+
+{% block page_title %}Configuración General{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <h3>Configuración General</h3>
+  </div>
+  <div class="card-body">
+    {% if error %}
+    <div class="alert alert-danger">{{ error }}</div>
+    {% endif %}
+    {% if success %}
+    <div class="alert alert-success">{{ success }}</div>
+    {% endif %}
+
+    <form method="post" action="/configuracion">
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+        <div class="form-group">
+          <label class="form-label">Nombre de la empresa</label>
+          <input class="form-control" type="text" name="company_name" value="{{ settings.company_name or '' }}" />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Formato de fecha</label>
+          <input class="form-control" type="text" name="date_format" value="{{ settings.date_format or 'YYYY-MM-DD' }}" />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Moneda por defecto</label>
+          <input class="form-control" type="text" name="currency" value="{{ settings.currency or 'USD' }}" />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">URL del logo (opcional)</label>
+          <input class="form-control" type="text" name="logo_url" value="{{ settings.logo_url or '' }}" />
+        </div>
+      </div>
+
+      <div style="display:flex; gap:12px; margin-top:1rem; justify-content:flex-end;">
+        <button type="submit" class="btn btn-primary">Guardar</button>
+        <a href="/" class="btn btn-secondary">Cancelar</a>
+      </div>
+    </form>
+
+    {% if settings.logo_url %}
+    <div style="margin-top:1rem;">
+      <label class="form-label">Vista previa del logo</label>
+      <div style="margin-top:0.5rem;"><img src="{{ settings.logo_url }}" alt="Logo" style="max-height:80px;"/></div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

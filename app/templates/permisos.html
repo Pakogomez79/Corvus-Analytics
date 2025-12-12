@@ -1,0 +1,85 @@
+{% extends "layout.html" %}
+
+{% block title %}Permisos - Corvus International Group{% endblock %}
+{% block page_title %}Permisos{% endblock %}
+{% block breadcrumb %}Administración &gt; Permisos{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <div>
+      <h3 class="card-title">Listado de Permisos</h3>
+      <p class="card-subtitle">Permisos disponibles en el sistema</p>
+    </div>
+    <div style="display:flex; gap:1rem; align-items:center;">
+      <form method="get" action="/permisos" style="display:flex; gap:0.75rem; align-items:center;">
+        <input type="search" name="q" placeholder="Buscar permiso..." value="{{ q }}" style="padding:0.5rem 0.75rem; border:1px solid #e2e8f0; border-radius:6px;" />
+        <button class="btn btn-secondary" type="submit">Buscar</button>
+      </form>
+      <a href="/permisos/create" class="btn btn-accent">Crear Permiso</a>
+    </div>
+  </div>
+
+  <div class="table-container">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Nombre</th>
+          <th>Descripción</th>
+          <th>Acción</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if permissions %}
+          {% for p in permissions %}
+          <tr>
+            <td><strong>{{ p.name }}</strong></td>
+            <td style="color:var(--text-secondary);">{{ p.description or '-' }}</td>
+            <td>
+              <a href="/permisos/{{ p.id }}/edit" title="Editar" style="margin-right:0.5rem;">✏️</a>
+              <form method="post" action="/permisos/{{ p.id }}/delete" style="display:inline;" onsubmit="return confirm('Eliminar permiso?');">
+                <button type="submit" class="btn btn-outline" style="padding:0.25rem 0.5rem;">🗑️</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="3" style="text-align:center; padding:2rem; color:var(--text-secondary);">No hay permisos</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  <div style="display:flex; justify-content:space-between; align-items:center; padding-top:0.75rem;">
+    <div style="color:var(--text-secondary);">Mostrando {{ (page - 1) * per_page + 1 }} - {{ (page - 1) * per_page + permissions|length }} de {{ total }}</div>
+    <div>
+      <nav aria-label="Paginación">
+        <ul style="display:flex; gap:0.5rem; list-style:none; padding:0; margin:0;">
+          {% if page > 1 %}
+          <li><a class="btn btn-outline" href="/permisos?page={{ page - 1 }}{% if q %}&q={{ q }}{% endif %}">Anterior</a></li>
+          {% else %}
+          <li><button class="btn btn-outline" disabled>Anterior</button></li>
+          {% endif %}
+
+          {% for p in range(1, pages + 1) %}
+            {% if p == page %}
+              <li><button class="btn btn-primary" disabled>{{ p }}</button></li>
+            {% else %}
+              <li><a class="btn btn-secondary" href="/permisos?page={{ p }}{% if q %}&q={{ q }}{% endif %}">{{ p }}</a></li>
+            {% endif %}
+          {% endfor %}
+
+          {% if page < pages %}
+          <li><a class="btn btn-outline" href="/permisos?page={{ page + 1 }}{% if q %}&q={{ q }}{% endif %}">Siguiente</a></li>
+          {% else %}
+          <li><button class="btn btn-outline" disabled>Siguiente</button></li>
+          {% endif %}
+        </ul>
+      </nav>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

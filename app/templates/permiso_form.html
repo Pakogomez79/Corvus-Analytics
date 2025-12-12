@@ -1,0 +1,39 @@
+{% extends "layout.html" %}
+
+{% block title %}Permisos - Corvus International Group{% endblock %}
+{% block page_title %}{{ 'Crear permiso' if action == 'create' else 'Editar permiso' }}{% endblock %}
+{% block breadcrumb %}Administración &gt; Permisos{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <div>
+      <h3 class="card-title">{{ 'Crear permiso' if action == 'create' else 'Editar permiso' }}</h3>
+      <p class="card-subtitle">Administra los permisos del sistema</p>
+    </div>
+  </div>
+
+  <div class="card-body">
+    {% if error %}
+      <div class="alert alert-danger">{{ error }}</div>
+    {% endif %}
+    <form method="post" action="{% if action == 'create' %}/permisos/create{% else %}/permisos/{{ perm.id }}/edit{% endif %}">
+      <div class="form-group">
+        <label class="form-label" for="name">Nombre</label>
+        <input id="name" name="name" class="form-control" value="{{ perm.name if perm }}" required />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="description">Descripción</label>
+        <input id="description" name="description" class="form-control" value="{{ perm.description if perm }}" />
+      </div>
+
+      <div style="display:flex; gap:0.75rem; justify-content:flex-end; margin-top:1rem;">
+        <a class="btn btn-secondary" href="/permisos">Cancelar</a>
+        <button class="btn btn-primary" type="submit">{% if action == 'create' %}Crear{% else %}Guardar cambios{% endif %}</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
