@@ -65,6 +65,45 @@ def save_settings(data: dict):
         logger.exception("Error guardando settings: %s", e)
         return False
 
+
+def _normalize_logo_url(settings: dict) -> str:
+    """Normalize a stored logo path to a public URL.
+
+    - If already an absolute URL (http/https) or starts with '/', return as-is.
+    - If the value is a filesystem path (absolute or relative) that contains 'static',
+      convert it to a '/static/...' URL.
+    - If path is under BASE_DIR, return the relative path starting with '/'.
+    """
+    url = settings.get("logo_url") if isinstance(settings, dict) else ''
+    if not url:
+        return ''
+    url = str(url)
+    if url.startswith("http://") or url.startswith("https://") or url.startswith("/"):
+        return url
+
+    sp = url.replace('\\', '/')
+
+    # if contains 'static/', build public path
+    if 'static/' in sp:
+        idx = sp.index('static/')
+        return '/' + sp[idx:]
+
+    # if absolute path under project
+    try:
+        p = Path(sp)
+        if p.is_absolute() and p.exists():
+            s = str(p).replace('\\', '/')
+            base = str(BASE_DIR).replace('\\', '/')
+            if s.startswith(base):
+                rel = s[len(base):]
+                rel = rel if rel.startswith('/') else '/' + rel
+                return rel
+    except Exception:
+        pass
+
+    # fallback: return original value
+    return url
+
 # Helper disponible en plantillas para comprobar permisos dinámicamente
 def _template_has_permission(request: Request, permission_name: str) -> bool:
     # intenta leer token desde la cookie y verificar permiso en DB
@@ -330,6 +369,8 @@ def configuracion_page(
         return RedirectResponse(url="/login", status_code=303)
 
     settings = load_settings() or {}
+    # normalizar ruta de logo a URL pública si es una ruta local
+    settings["logo_url"] = _normalize_logo_url(settings)
     return TEMPLATES.TemplateResponse("configuracion.html", {"request": request, "settings": settings, "active_page": "configuracion"})
 
 
@@ -387,6 +428,8 @@ def configuracion_submit(
             _enqueue_with_request(background_tasks, request, actor_id=actor_id, actor_username=actor_username, action='config.update', category='config', resource_type='settings', resource_id='site', mensaje_es=f"{actor_username} actualizó configuración general")
         except Exception:
             pass
+        # Normalizar logo_url antes de mostrar
+        settings["logo_url"] = _normalize_logo_url(settings)
         return TEMPLATES.TemplateResponse("configuracion.html", {"request": request, "settings": settings, "success": "Configuración guardada correctamente", "active_page": "configuracion"})
 
     return TEMPLATES.TemplateResponse("configuracion.html", {"request": request, "settings": settings, "error": "Error guardando configuración", "active_page": "configuracion"})
