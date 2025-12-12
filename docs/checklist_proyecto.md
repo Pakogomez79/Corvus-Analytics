@@ -90,9 +90,9 @@
 - [x] Exportación de logs
 
 ### 1.6 Configuración General
-- [ ] Logo de empresa (upload)
-- [ ] Nombre de empresa
-- [ ] Parámetros globales (formato fechas, moneda, etc.)
+- [ ] Logo de empresa (upload) — campo logo_url disponible; falta soporte de subida
+- [x] Nombre de empresa
+- [x] Parámetros globales (formato fechas, moneda, etc.)
 
 ---
 
