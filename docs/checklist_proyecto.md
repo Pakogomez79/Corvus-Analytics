@@ -76,7 +76,6 @@
 - [x] Roles predefinidos: Admin, Analista, Auditor, Consultor
 
 ### 1.4 Gestión de Permisos
-### 1.4 Gestión de Permisos
 - [ ] Matriz de permisos (rol × módulo × acción)
 - [ ] Acciones: Ver, Crear, Editar, Eliminar, Exportar (soporte backend presente)
 - [x] Decorador de permisos en rutas

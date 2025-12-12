@@ -5,6 +5,26 @@
 {% block content %}
 <h2>Matriz de Permisos</h2>
 <p>Marque los permisos que desea asignar a cada rol. Guardar aplicará los cambios a la base de datos.</p>
+
+<form method="get" action="/permisos/matriz" style="display:flex; gap:0.75rem; align-items:center; margin-bottom:1rem;">
+  <label style="display:flex; gap:0.5rem; align-items:center;"><span>Rol:</span>
+    <select name="role_id">
+      <option value="">Todos</option>
+      {% for r in roles_all %}
+        <option value="{{ r.id }}" {% if role_id and role_id|int == r.id %}selected{% endif %}>{{ r.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label style="display:flex; gap:0.5rem; align-items:center;"><span>Buscar permiso:</span>
+    <input type="search" name="q" placeholder="nombre o descripción" value="{{ q or '' }}" />
+  </label>
+  <div>
+    <button class="btn btn-outline" type="submit">Filtrar</button>
+    <a class="btn" href="/permisos/matriz/export?role_id={{ role_id or '' }}&q={{ q or '' }}">Exportar CSV</a>
+    <a class="btn" href="/permisos/matriz">Restablecer</a>
+  </div>
+</form>
+
 <form method="post" action="/permisos/matriz/guardar">
   <div class="table-responsive">
     <table class="matrix-table">

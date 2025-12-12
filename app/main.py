@@ -11,7 +11,7 @@ import shutil
 import pandas as pd
 import pdfkit
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile, Cookie, BackgroundTasks
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse, Response
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -1456,7 +1456,14 @@ def permisos_delete(request: Request, background_tasks: BackgroundTasks, perm_id
 
 
 @app.get("/permisos/matriz", response_class=HTMLResponse)
-def permisos_matriz_page(request: Request, db=Depends(get_db), current_user: Optional[dict] = Depends(get_current_user), permission_ok: bool = Depends(require_permission('roles.view'))):
+def permisos_matriz_page(
+    request: Request,
+    role_id: Optional[int] = Query(None),
+    q: Optional[str] = Query(None),
+    db=Depends(get_db),
+    current_user: Optional[dict] = Depends(get_current_user),
+    permission_ok: bool = Depends(require_permission('roles.view')),
+):
     if not current_user:
         return RedirectResponse(url="/login", status_code=303)
 
@@ -1464,8 +1471,20 @@ def permisos_matriz_page(request: Request, db=Depends(get_db), current_user: Opt
     if not _require_admin(current_user, db) and not has_permission(db, current_user.get('user_id'), 'roles.view'):
         return TEMPLATES.TemplateResponse("dashboard.html", {"request": request, "error": "Acceso denegado"}, status_code=403)
 
-    roles = db.query(Role).order_by(Role.name).all()
-    permissions = db.query(Permission).order_by(Permission.name).all()
+    # lista completa para el select de filtro
+    roles_all = db.query(Role).order_by(Role.name).all()
+    # columnas: todos o solo el rol seleccionado
+    if role_id:
+        roles = db.query(Role).filter(Role.id == role_id).order_by(Role.name).all()
+    else:
+        roles = roles_all
+
+    # permisos; aplicar búsqueda si se provee q
+    perms_q = db.query(Permission).order_by(Permission.name)
+    if q:
+        like_q = f"%{q}%"
+        perms_q = perms_q.filter((Permission.name.ilike(like_q)) | (Permission.description.ilike(like_q)))
+    permissions = perms_q.all()
 
     # Construir conjunto de asignaciones para la UI
     assigned = set()
@@ -1473,7 +1492,19 @@ def permisos_matriz_page(request: Request, db=Depends(get_db), current_user: Opt
         if rp.role_id and rp.permission_id:
             assigned.add((rp.role_id, rp.permission_id))
 
-    return TEMPLATES.TemplateResponse("permission_matrix.html", {"request": request, "roles": roles, "permissions": permissions, "assigned": assigned, "active_page": "permisos"})
+    return TEMPLATES.TemplateResponse(
+        "permission_matrix.html",
+        {
+            "request": request,
+            "roles": roles,
+            "roles_all": roles_all,
+            "permissions": permissions,
+            "assigned": assigned,
+            "active_page": "permisos",
+            "role_id": role_id,
+            "q": q,
+        },
+    )
 
 
 @app.post("/permisos/matriz/guardar", response_class=HTMLResponse)
@@ -1521,6 +1552,60 @@ async def permisos_matriz_guardar(request: Request, background_tasks: Background
 
     return RedirectResponse(url="/permisos/matriz", status_code=303)
 
+
+@app.get("/permisos/matriz/export")
+def permisos_matriz_export(
+    role_id: Optional[int] = Query(None),
+    q: Optional[str] = Query(None),
+    db=Depends(get_db),
+    current_user: Optional[dict] = Depends(get_current_user),
+):
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+
+    # Solo admin o roles con vista pueden exportar
+    if not _require_admin(current_user, db) and not has_permission(db, current_user.get('user_id'), 'roles.view'):
+        return JSONResponse(status_code=403, content={"detail": "Acceso denegado"})
+
+    # roles para cabecera
+    roles_q = db.query(Role).order_by(Role.name)
+    if role_id:
+        roles_q = roles_q.filter(Role.id == role_id)
+    roles = roles_q.all()
+
+    # permisos
+    perms_q = db.query(Permission).order_by(Permission.name)
+    if q:
+        like_q = f"%{q}%"
+        perms_q = perms_q.filter((Permission.name.ilike(like_q)) | (Permission.description.ilike(like_q)))
+    permissions = perms_q.all()
+
+    # asignaciones
+    assigned = set((rp.role_id, rp.permission_id) for rp in db.query(RolePermission).all())
+
+    # construir CSV
+    import csv, io
+
+    out = io.StringIO()
+    writer = csv.writer(out)
+    header = ["permission", "description"] + [r.name for r in roles]
+    writer.writerow(header)
+
+    for p in permissions:
+        row = [p.name, p.description or ""]
+        for r in roles:
+            row.append("X" if (r.id, p.id) in assigned else "")
+        writer.writerow(row)
+
+    csv_data = out.getvalue()
+    out.close()
+
+    filename = "permission_matrix.csv"
+    headers = {
+        "Content-Disposition": f"attachment; filename=\"{filename}\"",
+        "Content-Type": "text/csv; charset=utf-8",
+    }
+    return Response(content=csv_data, headers=headers, media_type="text/csv")
 
 
 @app.get("/auditoria", response_class=HTMLResponse)
