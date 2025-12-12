@@ -10,7 +10,7 @@
 
 | Módulo | Completado | Total | Progreso |
 |--------|------------|-------|----------|
-| 🔐 Administración | 24 | 33 | 🟩 73% |
+| 🔐 Administración | 25 | 33 | 🟩 76% |
 | 📋 Configuración XBRL | 0 | 34 | ⬜ 0% |
 | 📤 Carga de Datos | 0 | 23 | ⬜ 0% |
 | 📊 Análisis Financiero | 0 | 55 | ⬜ 0% |
@@ -18,7 +18,7 @@
 | 🔔 Alertas | 0 | 18 | ⬜ 0% |
 | 📄 Exportación | 0 | 14 | ⬜ 0% |
 | 🖥️ Infraestructura | 11 | 16 | 🟩 69% |
-| **TOTAL** | **42** | **208** | **20%** |
+| **TOTAL** | **43** | **208** | **21%** |
 
 ---
 
