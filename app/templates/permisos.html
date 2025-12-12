@@ -12,12 +12,12 @@
       <p class="card-subtitle">Permisos disponibles en el sistema</p>
     </div>
     <div style="display:flex; gap:1rem; align-items:center;">
-      <form method="get" action="/permisos" style="display:flex; gap:0.75rem; align-items:center;">
+      <form id="permisos-filters" method="get" action="/permisos" style="display:flex; gap:0.75rem; align-items:center;">
         <input type="search" name="q" placeholder="Buscar permiso..." value="{{ q }}" style="padding:0.5rem 0.75rem; border:1px solid #e2e8f0; border-radius:6px;" />
         <button class="btn btn-secondary" type="submit">Buscar</button>
       </form>
       <a href="/permisos/create" class="btn btn-accent">Crear Permiso</a>
-      <a href="/permisos/export?q={{ q or '' }}" class="btn">Exportar CSV</a>
+      <button id="export-btn" class="btn btn-primary" type="button">Exportar CSV</button>
     </div>
   </div>
 
@@ -83,4 +83,21 @@
   </div>
 </div>
 
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (function(){
+    const exportBtn = document.getElementById('export-btn');
+    if (!exportBtn) return;
+    exportBtn.addEventListener('click', function(){
+      const form = document.getElementById('permisos-filters');
+      if (!form) return;
+      const params = new URLSearchParams(new FormData(form));
+      const qs = params.toString();
+      const url = '/permisos/export' + (qs ? ('?' + qs) : '');
+      window.location.href = url;
+    });
+  })();
+</script>
 {% endblock %}
