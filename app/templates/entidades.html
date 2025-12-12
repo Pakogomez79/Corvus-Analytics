@@ -8,40 +8,29 @@
 {% endblock %}
 
 {% block content %}
-<!-- Estadísticas -->
-<div class="stats-grid" style="margin-bottom: 1.5rem;">
-  <div class="stat-card">
-    <div class="stat-icon" style="background: linear-gradient(135deg, var(--corvus-primary), var(--corvus-primary-light));">
-      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
-      </svg>
-    </div>
-    <div class="stat-content">
-      <div class="stat-value">{{ entities|length }}</div>
-      <div class="stat-label">Total Entidades</div>
-    </div>
-  </div>
-</div>
 
-<!-- Tabla de Entidades -->
+<!-- Controles y tabla: eliminada la tarjeta de estadísticas -->
 <div class="card">
-  <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
-    <h3 class="card-title">
-      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 0.5rem;">
-        <path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
-      </svg>
-      Listado de Entidades
-    </h3>
+  <div class="card-header">
     <div>
-      <a href="/upload" class="btn btn-primary" style="font-size: 0.85rem;">
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="12" y1="5" x2="12" y2="19"></line>
-          <line x1="5" y1="12" x2="19" y2="12"></line>
-        </svg>
-        Nueva Entidad
-      </a>
+      <h3 class="card-title">Listado de Entidades</h3>
+      <p class="card-subtitle">Entidades registradas</p>
+    </div>
+    <div style="display:flex; gap:1rem; align-items:center;">
+      <form method="get" action="/entidades" style="display:flex; gap:0.75rem; align-items:center;">
+        <input type="search" name="q" placeholder="Buscar nombre o NIT" value="{{ q or '' }}" style="padding:0.5rem 0.75rem; border:1px solid #e2e8f0; border-radius:6px;" />
+        <select name="active" style="padding:0.5rem 0.75rem; border:1px solid #e2e8f0; border-radius:6px;">
+          <option value="" {% if active is none or active=='' %}selected{% endif %}>Todos</option>
+          <option value="1" {% if active=='1' or active=='true' %}selected{% endif %}>Activas</option>
+          <option value="0" {% if active=='0' or active=='false' %}selected{% endif %}>Inactivas</option>
+        </select>
+        <button class="btn btn-secondary" type="submit">Buscar</button>
+      </form>
+
+      <a href="/entidades/create" class="btn btn-accent">Nueva Entidad</a>
     </div>
   </div>
+
   <div class="card-body" style="padding: 0;">
     <div class="table-responsive">
       <table class="table">
@@ -65,7 +54,7 @@
               </td>
               <td>
                 <code style="font-size: 0.85rem; background: var(--corvus-bg-dark); padding: 0.15rem 0.5rem; border-radius: 4px;">
-                  {{ entity.identifier }}
+                  {{ entity.nit or '' }}
                 </code>
               </td>
               <td>{{ entity.sector or 'N/A' }}</td>
@@ -74,11 +63,13 @@
                   {{ entity.files|length if entity.files else 0 }}
                 </span>
               </td>
-              <td style="text-align: center;">
-                <a href="/archivos?entidad={{ entity.name }}" class="btn btn-secondary" style="font-size: 0.75rem; padding: 0.35rem 0.75rem;">
-                  Ver Archivos
-                </a>
-              </td>
+              <td style="text-align: center; display:flex; gap:0.5rem; justify-content:center;">
+                  <a href="/entidades/{{ entity.id }}/edit" title="Editar" style="display:inline-flex; align-items:center; padding:0.25rem;">✏️</a>
+                  <form method="post" action="/entidades/{{ entity.id }}/delete" style="display:inline;" onsubmit="return confirm('¿Inactivar esta entidad?');">
+                    <button type="submit" class="btn btn-outline" style="padding:0.25rem 0.5rem;">🗑️</button>
+                  </form>
+                  <a href="/archivos?entidad={{ entity.name }}" class="btn btn-secondary" style="font-size:0.75rem; padding:0.25rem 0.5rem;">Ver Archivos</a>
+                </td>
             </tr>
             {% endfor %}
           {% else %}
@@ -101,4 +92,5 @@
     </div>
   </div>
 </div>
+
 {% endblock %}

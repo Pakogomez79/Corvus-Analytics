@@ -25,8 +25,12 @@ class Entity(Base):
 
     id = Column(Integer, primary_key=True)
     name = Column(String(255), nullable=False)
-    nit = Column(String(50), nullable=True, unique=False)
+    nit = Column(String(50), nullable=True, unique=True)
+    sector = Column(String(100), nullable=True)
+    type = Column(String(50), nullable=True)
+    is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     files = relationship("File", back_populates="entity")
 

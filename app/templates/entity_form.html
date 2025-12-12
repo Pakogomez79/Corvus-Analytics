@@ -1,0 +1,65 @@
+{% extends "layout.html" %}
+
+{% block title %}Entidad - Corvus{% endblock %}
+{% block page_title %}{{ 'Editar Entidad' if entity else 'Crear Entidad' }}{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <h3 class="card-title">{{ 'Editar Entidad' if entity else 'Crear Entidad' }}</h3>
+  </div>
+  <div class="card-body">
+    <style>
+      .entity-form .form-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:1rem;align-items:center}
+      @media(max-width:800px){.entity-form .form-grid{grid-template-columns:1fr}}
+      .entity-form label{display:block;margin-bottom:0.35rem;font-weight:600;color:var(--text-primary)}
+      .entity-form input[type="text"], .entity-form input[type="search"]{width:100%;padding:0.5rem 0.6rem;border:1px solid #d1d5db;border-radius:6px;background:white;box-sizing:border-box}
+      .entity-form .actions{display:flex;gap:0.75rem;margin-top:1rem;align-items:center}
+      .entity-form .field-note{font-size:0.85rem;color:var(--text-secondary);margin-top:0.25rem}
+      .toggle-row{display:flex;align-items:center;gap:0.5rem}
+    </style>
+
+    {% if error %}
+      <div class="alert alert-danger">{{ error }}</div>
+    {% endif %}
+
+    <form class="entity-form" method="post" action="{% if entity %}/entidades/{{ entity.id }}/edit{% else %}/entidades/create{% endif %}">
+      <div class="form-grid">
+        <div>
+          <label for="name">Nombre</label>
+          <input id="name" name="name" type="text" value="{{ entity.name if entity else '' }}" required placeholder="Nombre de la entidad" />
+          <div class="field-note">Nombre legal o comercial de la entidad.</div>
+        </div>
+
+        <div>
+          <label for="nit">NIT / Identificador</label>
+          <input id="nit" name="nit" type="text" value="{{ entity.nit if entity else '' }}" placeholder="NIT o RUC" />
+          <div class="field-note">Debe ser único. Formato libre.</div>
+        </div>
+
+        <div>
+          <label for="sector">Sector</label>
+          <input id="sector" name="sector" type="text" value="{{ entity.sector if entity else '' }}" placeholder="Sector económico" />
+        </div>
+
+        <div>
+          <label for="type">Tipo</label>
+          <input id="type" name="type" type="text" value="{{ entity.type if entity else '' }}" placeholder="Privada / Pública / Otra" />
+        </div>
+
+        <div style="grid-column:1 / -1; display:flex; justify-content:flex-end;">
+          <div class="toggle-row">
+            <label for="is_active">Activo</label>
+            <input id="is_active" type="checkbox" name="is_active" value="1" {% if entity and entity.is_active %}checked{% elif not entity %}checked{% endif %} />
+          </div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="btn btn-primary" type="submit">Guardar</button>
+        <a href="/entidades" class="btn btn-outline">Cancelar</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

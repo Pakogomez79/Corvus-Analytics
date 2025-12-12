@@ -10,15 +10,15 @@
 
 | Módulo | Completado | Total | Progreso |
 |--------|------------|-------|----------|
-| 🔐 Administración | 25 | 33 | 🟩 76% |
-| 📋 Configuración XBRL | 0 | 34 | ⬜ 0% |
+| 🔐 Administración | 27 | 32 | 🟩 84% |
+| 📋 Configuración XBRL | 5 | 34 | 🟨 15% |
 | 📤 Carga de Datos | 0 | 23 | ⬜ 0% |
 | 📊 Análisis Financiero | 0 | 55 | ⬜ 0% |
 | 📈 Dashboard | 7 | 15 | 🟨 47% |
 | 🔔 Alertas | 0 | 18 | ⬜ 0% |
 | 📄 Exportación | 0 | 14 | ⬜ 0% |
 | 🖥️ Infraestructura | 11 | 16 | 🟩 69% |
-| **TOTAL** | **43** | **208** | **21%** |
+| **TOTAL** | **50** | **208** | **24%** |
 
 ---
 
@@ -99,13 +99,12 @@
 ## 📋 MÓDULO 2: CONFIGURACIÓN XBRL
 
 ### 2.1 Catálogo de Empresas
-- [ ] Modelo Entity (NIT, nombre, sector, tipo, estado)
-- [ ] Listado de empresas con búsqueda y filtros
-- [ ] Crear empresa
-- [ ] Editar empresa
-- [ ] Activar/Desactivar empresa
-- [ ] Importación masiva desde CSV/Excel
-- [ ] Exportación de catálogo
+### 2.1 Catálogo de Empresas
+- [x] Modelo Entity (NIT, nombre, sector, tipo, estado)
+- [x] Listado de empresas con búsqueda y filtros
+- [x] Crear empresa
+- [x] Editar empresa
+- [x] Activar/Desactivar empresa
 
 ### 2.2 Gestión de Periodos
 - [ ] Modelo Period (tipo, año, fecha_inicio, fecha_fin, estado)

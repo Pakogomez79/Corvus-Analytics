@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import or_, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
 from xhtml2pdf import pisa
 
@@ -2263,3 +2264,209 @@ def upload_xbrl(
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok"}
+
+
+# ==============================
+# RUTAS: Entidades (Catálogo)
+# ==============================
+
+
+@app.get("/entidades", response_class=HTMLResponse)
+def entidades_page(
+    request: Request,
+    q: Optional[str] = Query(None),
+    active: Optional[str] = Query(None),
+    page: int = Query(1),
+    per_page: int = Query(20),
+    db = Depends(get_db),
+    current_user: Optional[dict] = Depends(get_current_user),
+    permission_ok: bool = Depends(require_permission('entities.view')),
+):
+    query = db.query(Entity)
+    if q:
+        likeq = f"%{q}%"
+        query = query.filter((Entity.name.ilike(likeq)) | (Entity.nit.ilike(likeq)))
+    if active is not None:
+        if active in ("1", "true", "True"):
+            query = query.filter(Entity.is_active == True)
+        elif active in ("0", "false", "False"):
+            query = query.filter(Entity.is_active == False)
+
+    total = query.count()
+    pages = max(1, (total + per_page - 1) // per_page)
+    entities = query.order_by(Entity.name).offset((page - 1) * per_page).limit(per_page).all()
+
+    return TEMPLATES.TemplateResponse("entidades.html", {
+        "request": request,
+        "entities": entities,
+        "q": q,
+        "active": active,
+        "page": page,
+        "per_page": per_page,
+        "pages": pages,
+        "total": total,
+        "active_page": "entidades",
+    })
+
+
+@app.get("/entidades/create", response_class=HTMLResponse)
+def entidades_create_page(request: Request, current_user: Optional[dict] = Depends(get_current_user), permission_ok: bool = Depends(require_permission('entities.manage'))):
+    return TEMPLATES.TemplateResponse("entity_form.html", {"request": request, "entity": None, "active_page": "entidades", "error": None})
+
+
+@app.post("/entidades/create")
+def entidades_create(
+    request: Request,
+    name: str = Form(...),
+    nit: Optional[str] = Form(None),
+    sector: Optional[str] = Form(None),
+    type: Optional[str] = Form(None),
+    is_active: Optional[str] = Form("1"),
+    db = Depends(get_db),
+    background_tasks: BackgroundTasks = None,
+    current_user: Optional[dict] = Depends(get_current_user),
+    permission_ok: bool = Depends(require_permission('entities.manage')),
+):
+    ent = Entity(name=name, nit=nit or None, sector=sector, type=type, is_active=(is_active not in ("0", "false", "False")))
+    db.add(ent)
+    try:
+        db.commit()
+        db.refresh(ent)
+    except IntegrityError as ie:
+        db.rollback()
+        # Mostrar el formulario con error
+        return TEMPLATES.TemplateResponse("entity_form.html", {"request": request, "entity": ent, "active_page": "entidades", "error": "El NIT ya existe en otra entidad."})
+    try:
+        if background_tasks is not None:
+            _enqueue_with_request(background_tasks, request, actor_id=current_user.get("user_id"), action='entities.create', category='xbrl', resource_type='entity', resource_id=str(ent.id), mensaje_es=f"Entidad {ent.name} creada")
+    except Exception:
+        pass
+    return RedirectResponse(url="/entidades", status_code=303)
+
+
+@app.get("/entidades/{entity_id}/edit", response_class=HTMLResponse)
+def entidades_edit_page(entity_id: int, request: Request, db = Depends(get_db), current_user: Optional[dict] = Depends(get_current_user), permission_ok: bool = Depends(require_permission('entities.manage'))):
+    ent = db.query(Entity).filter(Entity.id == entity_id).first()
+    if not ent:
+        return RedirectResponse(url="/entidades", status_code=303)
+    return TEMPLATES.TemplateResponse("entity_form.html", {"request": request, "entity": ent, "active_page": "entidades", "error": None})
+
+
+@app.post("/entidades/{entity_id}/edit")
+def entidades_edit(entity_id: int,
+                   name: str = Form(...),
+                   nit: Optional[str] = Form(None),
+                   sector: Optional[str] = Form(None),
+                   type: Optional[str] = Form(None),
+                   is_active: Optional[str] = Form("1"),
+                   db = Depends(get_db),
+                   background_tasks: BackgroundTasks = None,
+                   current_user: Optional[dict] = Depends(get_current_user),
+                   permission_ok: bool = Depends(require_permission('entities.manage'))):
+    ent = db.query(Entity).filter(Entity.id == entity_id).first()
+    if not ent:
+        raise HTTPException(status_code=404, detail="Entidad no encontrada")
+    ent.name = name
+    ent.nit = nit or None
+    ent.sector = sector
+    ent.type = type
+    ent.is_active = (is_active not in ("0", "false", "False"))
+    db.add(ent)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        return TEMPLATES.TemplateResponse("entity_form.html", {"request": request, "entity": ent, "active_page": "entidades", "error": "El NIT ya existe en otra entidad."})
+    try:
+        if background_tasks is not None:
+            _enqueue_with_request(background_tasks, None, actor_id=current_user.get("user_id"), action='entities.update', category='xbrl', resource_type='entity', resource_id=str(ent.id), mensaje_es=f"Entidad {ent.name} actualizada")
+    except Exception:
+        pass
+    return RedirectResponse(url="/entidades", status_code=303)
+
+
+@app.post("/entidades/{entity_id}/toggle")
+def entidades_toggle(entity_id: int, db = Depends(get_db), background_tasks: BackgroundTasks = None, current_user: Optional[dict] = Depends(get_current_user), permission_ok: bool = Depends(require_permission('entities.manage'))):
+    ent = db.query(Entity).filter(Entity.id == entity_id).first()
+    if not ent:
+        raise HTTPException(status_code=404, detail="Entidad no encontrada")
+    ent.is_active = not bool(ent.is_active)
+    db.add(ent)
+    db.commit()
+    try:
+        if background_tasks is not None:
+            _enqueue_with_request(background_tasks, None, actor_id=current_user.get("user_id"), action='entities.toggle', category='xbrl', resource_type='entity', resource_id=str(ent.id), mensaje_es=f"Entidad {ent.name} {'activada' if ent.is_active else 'desactivada'}")
+    except Exception:
+        pass
+    return RedirectResponse(url="/entidades", status_code=303)
+
+
+@app.post("/entidades/{entity_id}/delete")
+def entidades_delete(entity_id: int, db = Depends(get_db), background_tasks: BackgroundTasks = None, current_user: Optional[dict] = Depends(get_current_user), permission_ok: bool = Depends(require_permission('entities.manage'))):
+    """No borra la fila; marca la entidad como inactiva (soft-delete funcional)."""
+    ent = db.query(Entity).filter(Entity.id == entity_id).first()
+    if not ent:
+        raise HTTPException(status_code=404, detail="Entidad no encontrada")
+    ent.is_active = False
+    db.add(ent)
+    db.commit()
+    try:
+        if background_tasks is not None:
+            _enqueue_with_request(background_tasks, None, actor_id=current_user.get("user_id"), action='entities.delete', category='xbrl', resource_type='entity', resource_id=str(ent.id), mensaje_es=f"Entidad {ent.name} inactivada")
+    except Exception:
+        pass
+    return RedirectResponse(url="/entidades", status_code=303)
+
+
+@app.post("/entidades/import")
+def entidades_import(file: UploadFile = File(...), db = Depends(get_db), background_tasks: BackgroundTasks = None, current_user: Optional[dict] = Depends(get_current_user), permission_ok: bool = Depends(require_permission('entities.manage'))):
+    # soporta CSV y Excel
+    try:
+        content = file.file.read()
+        file.file.seek(0)
+        if file.filename.lower().endswith('.xlsx') or file.filename.lower().endswith('.xls'):
+            df = pd.read_excel(file.file)
+        else:
+            df = pd.read_csv(io.BytesIO(content))
+        created = 0
+        updated = 0
+        for _, row in df.iterrows():
+            nit = str(row.get('nit') or row.get('NIT') or '')
+            name = str(row.get('name') or row.get('nombre') or '')
+            sector = row.get('sector')
+            typev = row.get('type') or row.get('tipo')
+            if not name:
+                continue
+            ent = None
+            if nit:
+                ent = db.query(Entity).filter(Entity.nit == nit).first()
+            if not ent:
+                ent = Entity(name=name, nit=nit or None, sector=sector, type=typev)
+                db.add(ent)
+                created += 1
+            else:
+                ent.name = name
+                ent.sector = sector
+                ent.type = typev
+                updated += 1
+        db.commit()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error importando: {e}")
+    return RedirectResponse(url="/entidades", status_code=303)
+
+
+@app.get("/entidades/export")
+def entidades_export(q: Optional[str] = Query(None), db = Depends(get_db), current_user: Optional[dict] = Depends(get_current_user), permission_ok: bool = Depends(require_permission('entities.manage'))):
+    query = db.query(Entity)
+    if q:
+        likeq = f"%{q}%"
+        query = query.filter((Entity.name.ilike(likeq)) | (Entity.nit.ilike(likeq)))
+    rows = query.order_by(Entity.name).all()
+    import csv
+    si = io.StringIO()
+    writer = csv.writer(si)
+    writer.writerow(['id','nit','name','sector','type','is_active','created_at','updated_at'])
+    for e in rows:
+        writer.writerow([e.id, e.nit or '', e.name or '', e.sector or '', e.type or '', '1' if e.is_active else '0', e.created_at or '', e.updated_at or ''])
+    si.seek(0)
+    return StreamingResponse(io.BytesIO(si.getvalue().encode('utf-8')), media_type='text/csv', headers={"Content-Disposition": "attachment; filename=entidades.csv"})
