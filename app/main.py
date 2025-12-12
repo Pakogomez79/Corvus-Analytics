@@ -391,10 +391,38 @@ def configuracion_submit(
     settings = load_settings() or {}
 
     # Si se subió un archivo de logo, guardarlo en static/images y usar su ruta
+    previous_logo = settings.get("logo_url", "")
     if logo_file is not None and getattr(logo_file, 'filename', ''):
         try:
             images_dir = BASE_DIR / "static" / "images"
             images_dir.mkdir(parents=True, exist_ok=True)
+            # Intentar eliminar logo previo si está en disco y dentro de la carpeta images
+            try:
+                if previous_logo and not (str(previous_logo).startswith('http://') or str(previous_logo).startswith('https://')):
+                    prev = str(previous_logo)
+                    if prev.startswith('/'):
+                        prev_path = BASE_DIR / prev.lstrip('/')
+                    else:
+                        prev_path = Path(prev)
+                        if not prev_path.is_absolute():
+                            prev_path = BASE_DIR / prev_path
+
+                    try:
+                        prev_resolved = prev_path.resolve()
+                        images_resolved = images_dir.resolve()
+                        # seguridad: sólo borrar si está dentro del directorio images
+                        if images_resolved in prev_resolved.parents or prev_resolved.parent == images_resolved:
+                            if prev_resolved.exists():
+                                prev_resolved.unlink()
+                    except Exception:
+                        # intento alternativo: borrar si fichero existe y su padre contiene 'images'
+                        try:
+                            if prev_path.exists() and 'images' in str(prev_path.parent).lower():
+                                prev_path.unlink()
+                        except Exception:
+                            pass
+            except Exception:
+                pass
             orig_name = Path(logo_file.filename).name
             ext = Path(orig_name).suffix.lower()
             allowed = {'.png', '.jpg', '.jpeg', '.svg', '.gif'}
