@@ -1347,6 +1347,39 @@ def permisos_page(
     return TEMPLATES.TemplateResponse("permisos.html", {"request": request, "permissions": perms_data, "active_page": "permisos", "q": q or "", "page": page, "pages": pages, "total": total, "per_page": per_page})
 
 
+@app.get("/permisos/export")
+def permisos_export(q: Optional[str] = Query(None), db=Depends(get_db), current_user: Optional[dict] = Depends(get_current_user)):
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+
+    if not _require_admin(current_user, db) and not has_permission(db, current_user.get('user_id'), 'roles.view'):
+        return JSONResponse(status_code=403, content={"detail": "Acceso denegado"})
+
+    query = db.query(Permission).order_by(Permission.name)
+    if q:
+        like_q = f"%{q}%"
+        query = query.filter(Permission.name.ilike(like_q))
+
+    perms = query.all()
+
+    # build CSV
+    import csv, io
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(["name", "description"])
+    for p in perms:
+        writer.writerow([p.name, p.description or ""])
+
+    csv_data = out.getvalue()
+    out.close()
+
+    headers = {
+        "Content-Disposition": "attachment; filename=permissions.csv",
+        "Content-Type": "text/csv; charset=utf-8",
+    }
+    return Response(content=csv_data, headers=headers, media_type="text/csv")
+
+
 @app.get("/permisos/create", response_class=HTMLResponse)
 def permisos_create_page(request: Request, current_user: Optional[dict] = Depends(get_current_user), permission_ok: bool = Depends(require_permission('roles.manage'))):
     if not current_user:
