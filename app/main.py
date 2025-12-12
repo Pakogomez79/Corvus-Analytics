@@ -5,6 +5,8 @@ from decimal import Decimal
 from pathlib import Path
 from typing import List, Optional
 import json
+import uuid
+import shutil
 
 import pandas as pd
 import pdfkit
@@ -338,6 +340,7 @@ def configuracion_submit(
     date_format: Optional[str] = Form(None),
     currency: Optional[str] = Form(None),
     logo_url: Optional[str] = Form(None),
+    logo_file: UploadFile = File(None),
     current_user: Optional[dict] = Depends(get_current_user),
     background_tasks: BackgroundTasks = None,
 ):
@@ -345,11 +348,35 @@ def configuracion_submit(
         return RedirectResponse(url="/login", status_code=303)
 
     settings = load_settings() or {}
+
+    # Si se subió un archivo de logo, guardarlo en static/images y usar su ruta
+    if logo_file is not None and getattr(logo_file, 'filename', ''):
+        try:
+            images_dir = BASE_DIR / "static" / "images"
+            images_dir.mkdir(parents=True, exist_ok=True)
+            orig_name = Path(logo_file.filename).name
+            ext = Path(orig_name).suffix.lower()
+            allowed = {'.png', '.jpg', '.jpeg', '.svg', '.gif'}
+            if ext not in allowed:
+                return TEMPLATES.TemplateResponse("configuracion.html", {"request": request, "settings": settings, "error": "Tipo de archivo no permitido para el logo.", "active_page": "configuracion"})
+            filename = f"logo_{uuid.uuid4().hex}{ext}"
+            dest_path = images_dir / filename
+            with open(dest_path, 'wb') as out_f:
+                shutil.copyfileobj(logo_file.file, out_f)
+
+            # establecer ruta pública relativa
+            settings["logo_url"] = f"/static/images/{filename}"
+        except Exception as e:
+            logger.exception("Error guardando logo: %s", e)
+            return TEMPLATES.TemplateResponse("configuracion.html", {"request": request, "settings": settings, "error": "Error guardando el archivo del logo.", "active_page": "configuracion"})
+    else:
+        # mantener o actualizar URL manual
+        settings["logo_url"] = logo_url or settings.get("logo_url", "")
+
     settings.update({
-        "company_name": company_name or "",
-        "date_format": date_format or "YYYY-MM-DD",
-        "currency": currency or "USD",
-        "logo_url": logo_url or "",
+        "company_name": company_name or settings.get("company_name", ""),
+        "date_format": date_format or settings.get("date_format", "YYYY-MM-DD"),
+        "currency": currency or settings.get("currency", "USD"),
     })
 
     ok = save_settings(settings)

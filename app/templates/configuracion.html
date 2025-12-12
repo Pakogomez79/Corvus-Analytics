@@ -17,7 +17,7 @@
     <div class="alert alert-success">{{ success }}</div>
     {% endif %}
 
-    <form method="post" action="/configuracion">
+    <form method="post" action="/configuracion" enctype="multipart/form-data">
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
         <div class="form-group">
           <label class="form-label">Nombre de la empresa</label>
@@ -37,6 +37,11 @@
         <div class="form-group">
           <label class="form-label">URL del logo (opcional)</label>
           <input class="form-control" type="text" name="logo_url" value="{{ settings.logo_url or '' }}" />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Subir logo (opcional)</label>
+          <input class="form-control" type="file" name="logo_file" accept="image/*" />
         </div>
       </div>
 
