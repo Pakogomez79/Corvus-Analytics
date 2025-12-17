@@ -213,10 +213,12 @@ def _breadcrumb_module(active_page: Optional[str]) -> str:
     mapping = {
         # Principal
         'dashboard': 'Principal',
-        # XBRL
+        # XBRL (upload/files)
         'upload': 'XBRL',
-        'entidades': 'XBRL',
         'archivos': 'XBRL',
+        # Configuración (módulo principal para catálogos y mapeos)
+        'entidades': 'Configuración',
+        'canonical': 'Configuración',
         # Reportes / Análisis
         'comparativos': 'Reportes',
         'balance': 'Reportes',
@@ -228,9 +230,11 @@ def _breadcrumb_module(active_page: Optional[str]) -> str:
         'roles': 'Administración',
         'permisos': 'Administración',
         'auditoria': 'Administración',
-        'configuracion': 'Administración',
-        # Export / Otros
-        'upload': 'XBRL',
+        # Configuración (menu renamed)
+        'configuracion': 'Configuración',
+        'periodos': 'Configuración',
+        'taxonomias': 'Configuración',
+        'homologacion': 'Configuración',
     }
     return mapping.get(active_page, active_page.capitalize())
 
@@ -612,6 +616,39 @@ def configuracion_page(
     # normalizar ruta de logo a URL pública si es una ruta local
     settings["logo_url"] = _normalize_logo_url(settings)
     return TEMPLATES.TemplateResponse("configuracion.html", {"request": request, "settings": settings, "active_page": "configuracion"})
+
+
+@app.get("/periodos", response_class=HTMLResponse)
+def periodos_page(
+    request: Request,
+    current_user: Optional[dict] = Depends(get_current_user),
+    permission_ok: bool = Depends(require_permission('config.manage')),
+):
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    return TEMPLATES.TemplateResponse("periodos.html", {"request": request, "active_page": "periodos"})
+
+
+@app.get("/taxonomias", response_class=HTMLResponse)
+def taxonomias_page(
+    request: Request,
+    current_user: Optional[dict] = Depends(get_current_user),
+    permission_ok: bool = Depends(require_permission('config.manage')),
+):
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    return TEMPLATES.TemplateResponse("taxonomias.html", {"request": request, "active_page": "taxonomias"})
+
+
+@app.get("/homologacion", response_class=HTMLResponse)
+def homologacion_page(
+    request: Request,
+    current_user: Optional[dict] = Depends(get_current_user),
+    permission_ok: bool = Depends(require_permission('config.manage')),
+):
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    return TEMPLATES.TemplateResponse("homologacion.html", {"request": request, "active_page": "homologacion"})
 
 
 @app.post("/configuracion", response_class=HTMLResponse)

@@ -2,7 +2,7 @@
 
 {% block title %}Usuarios - Corvus International Group{% endblock %}
 {% block page_title %}{{ 'Crear usuario' if action == 'create' else 'Editar usuario' }}{% endblock %}
-{% block breadcrumb %}Administración &gt; Usuarios{% endblock %}
+{% block breadcrumb %}{{ self.page_title() }}{% endblock %}
 
 {% block content %}
 <div class="card">
