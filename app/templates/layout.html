@@ -84,6 +84,54 @@
           </ul>
         </div>
         
+        <!-- CONFIGURACION -->
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">CONFIGURACION</div>
+          <ul class="sidebar-menu">
+            <li class="sidebar-menu-item">
+              <a href="/entidades" class="sidebar-menu-link {% if active_page == 'entidades' %}active{% endif %}">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                </svg>
+                Entidades
+              </a>
+            </li>
+            <li class="sidebar-menu-item">
+              <a href="/periodos" class="sidebar-menu-link {% if active_page == 'periodos' %}active{% endif %}">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3M3 11h18M5 21h14a2 2 0 002-2V7H3v12a2 2 0 002 2z" />
+                </svg>
+                Gestión de Periodos
+              </a>
+            </li>
+            <li class="sidebar-menu-item">
+              <a href="/taxonomias" class="sidebar-menu-link {% if active_page == 'taxonomias' %}active{% endif %}">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7h18M3 12h18M3 17h18" />
+                </svg>
+                Gestión de Taxonomías
+              </a>
+            </li>
+            <li class="sidebar-menu-item">
+              <a href="/homologacion" class="sidebar-menu-link {% if active_page == 'homologacion' %}active{% endif %}">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7h6l3 6 4-8 5 8" />
+                </svg>
+                Homologación (Mapeo)
+              </a>
+            </li>
+            <li class="sidebar-menu-item">
+              <a href="/xbrl/canonical" class="sidebar-menu-link {% if active_page == 'canonical' %}active{% endif %}">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7h6v6H3V7zm8 0h10v10H11V7zM3 15h6v6H3v-6z" />
+                </svg>
+                Estados Financieros
+              </a>
+            </li>
+            <!-- 'Archivos' moved to XBRL section -->
+          </ul>
+        </div>
+        
         <!-- XBRL -->
         <div class="sidebar-section">
           <div class="sidebar-section-title">XBRL</div>
@@ -94,22 +142,6 @@
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                 </svg>
                 Cargar Archivo
-              </a>
-            </li>
-            <li class="sidebar-menu-item">
-              <a href="/entidades" class="sidebar-menu-link {% if active_page == 'entidades' %}active{% endif %}">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                </svg>
-                Entidades
-              </a>
-            </li>
-            <li class="sidebar-menu-item">
-              <a href="/xbrl/canonical" class="sidebar-menu-link {% if active_page == 'canonical' %}active{% endif %}">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7h6v6H3V7zm8 0h10v10H11V7zM3 15h6v6H3v-6z" />
-                </svg>
-                Estados Financieros
               </a>
             </li>
             <li class="sidebar-menu-item">
@@ -240,13 +272,23 @@
             <a href="/">Inicio</a>
             {% set module = breadcrumb_module(active_page) if active_page else '' %}
             {% set page_title_text = self.page_title() %}
-            {% if module and not page_title_text.lower().startswith(module.lower()) %}
-              &nbsp;&gt;&nbsp; <span class="breadcrumb-module">{{ module }}</span>
-              &nbsp;&gt;&nbsp;
-            {% elif module %}
-              &nbsp;&gt;&nbsp;
+
+            {# Capturar el bloque breadcrumb en una variable para evitar duplicados #}
+            {% set breadcrumb_text %}
+              {% block breadcrumb %}{{ page_title_text }}{% endblock %}
+            {% endset %}
+            {% set breadcrumb_text = breadcrumb_text | trim %}
+
+            {% if module %}
+              {% if '>' in breadcrumb_text %}
+                &nbsp;&gt;&nbsp; {{ breadcrumb_text | safe }}
+              {% else %}
+                &nbsp;&gt;&nbsp; <span class="breadcrumb-module">{{ module }}</span>
+                &nbsp;&gt;&nbsp; {{ breadcrumb_text | safe }}
+              {% endif %}
+            {% else %}
+              {{ breadcrumb_text | safe }}
             {% endif %}
-            {% block breadcrumb %}{{ page_title_text }}{% endblock %}
           </nav>
         </div>
       </div>
@@ -259,12 +301,7 @@
           <input type="search" placeholder="Buscar entidad, archivo..." />
         </div>
         
-        <button class="header-icon-btn" title="Notificaciones">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-          </svg>
-          <span class="badge">3</span>
-        </button>
+        <!-- Notificaciones eliminado -->
         
         {% set current_user = get_current_user(request) %}
         <div class="header-user" x-data="{ open: false }" @click.away="open = false">

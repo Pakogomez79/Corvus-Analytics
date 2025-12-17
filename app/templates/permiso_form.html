@@ -2,7 +2,7 @@
 
 {% block title %}Permisos - Corvus International Group{% endblock %}
 {% block page_title %}{{ 'Crear permiso' if action == 'create' else 'Editar permiso' }}{% endblock %}
-{% block breadcrumb %}Administración &gt; Permisos{% endblock %}
+{% block breadcrumb %}{{ self.page_title() }}{% endblock %}
 
 {% block content %}
 <div class="card">
