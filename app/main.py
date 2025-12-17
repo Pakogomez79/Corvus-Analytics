@@ -15,7 +15,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse,
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import or_, text
+from sqlalchemy import or_, text, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
 from xhtml2pdf import pisa
@@ -26,9 +26,29 @@ from .canonical_mapping import resolve_canonical_concept
 from .db import SessionLocal, engine
 from .ingest_arelle import parse_xbrl
 from .logger import get_logger, setup_application_logging
-from .models import Base, Entity, File as FileModel, Fact, Period, User, Role, UserRole, Permission, RolePermission
+from .models import (
+    Base,
+    Entity,
+    File as FileModel,
+    Fact,
+    Period,
+    User,
+    Role,
+    UserRole,
+    Permission,
+    RolePermission,
+    FinancialStatement,
+    CanonicalLine,
+)
 from .pdf_config import PDF_OPTIONS, get_pdfkit_config
-from .schemas import FileResponse
+from .schemas import (
+    FileResponse,
+    FinancialStatementCreate,
+    FinancialStatementResponse,
+    CanonicalLineCreate,
+    CanonicalLineResponse,
+    CanonicalLineTree,
+)
 
 # Setup application logging
 logger = setup_application_logging()
@@ -130,6 +150,62 @@ except Exception:
     pass
 
 
+def _template_get_current_user(request: Optional[Request]):
+    """
+    Helper para plantillas: devuelve un diccionario con datos del usuario actual
+    (name, initials, role) leyendo el token desde la cookie y consultando la DB.
+    """
+    if not request:
+        return None
+    access_token = request.cookies.get('access_token') or ''
+    token = access_token[7:] if access_token.startswith('Bearer ') else access_token
+    payload = decode_token(token) if token else None
+    if not payload:
+        return None
+    user_id = payload.get('user_id')
+    # valores por defecto basados en token
+    result = {
+        'name': payload.get('sub') or 'Usuario',
+        'initials': 'US',
+        'role': None,
+    }
+    if not user_id:
+        return result
+    db = SessionLocal()
+    try:
+        user = db.query(User).get(user_id)
+        if not user:
+            return result
+        # nombre a mostrar: preferir nombre + apellido si existen
+        if (user.first_name and user.first_name.strip()) or (user.last_name and user.last_name.strip()):
+            name = f"{(user.first_name or '').strip()} {(user.last_name or '').strip()}".strip()
+        else:
+            name = user.username
+        # iniciales: primeras letras de nombre y apellido o de username
+        parts = name.split()
+        if len(parts) >= 2:
+            initials = (parts[0][0] + parts[1][0]).upper()
+        else:
+            initials = (name[0] if name else 'U').upper()
+        # rol: tomar el primer rol asignado si existe
+        role_obj = db.query(Role).join(UserRole, UserRole.role_id == Role.id).filter(UserRole.user_id == user.id).first()
+        role_name = role_obj.name if role_obj else None
+        result.update({'name': name, 'initials': initials, 'role': role_name})
+        return result
+    except Exception:
+        return result
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+
+try:
+    TEMPLATES.env.globals['get_current_user'] = _template_get_current_user
+except Exception:
+    pass
+
+
 # Helper para determinar el módulo del breadcrumb a partir de active_page
 def _breadcrumb_module(active_page: Optional[str]) -> str:
     if not active_page:
@@ -197,6 +273,169 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+# -----------------------------
+# XBRL Canonical lines endpoints
+# -----------------------------
+
+
+@app.get('/xbrl/canonical', response_class=HTMLResponse)
+def view_canonical(request: Request, db=Depends(get_db)):
+    # Página Jinja que contiene el árbol y herramientas de import/CRUD
+    statements = db.query(FinancialStatement).order_by(FinancialStatement.code).all()
+    return TEMPLATES.TemplateResponse('canonical_lines.html', {'request': request, 'statements': statements, 'active_page': 'canonical'})
+
+
+@app.get('/api/xbrl/statements')
+def api_list_statements(db=Depends(get_db)):
+    stmts = db.query(FinancialStatement).order_by(FinancialStatement.code).all()
+    return [FinancialStatementResponse.from_orm(s) for s in stmts]
+
+
+@app.post('/api/xbrl/statements')
+def api_create_statement(item: FinancialStatementCreate, db=Depends(get_db)):
+    stmt = FinancialStatement(code=item.code, name=item.name, type=item.type)
+    db.add(stmt)
+    try:
+        db.commit()
+        db.refresh(stmt)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    return FinancialStatementResponse.from_orm(stmt)
+
+
+def _build_tree(db, statement_id: int):
+    rows = db.query(CanonicalLine).filter(CanonicalLine.statement_id == statement_id).order_by(CanonicalLine.parent_id.nullsfirst(), CanonicalLine.order.nullsfirst()).all()
+    nodes = {r.id: {'id': r.id, 'code': r.code, 'name': r.name, 'order': r.order, 'children': []} for r in rows}
+    root = []
+    for r in rows:
+        if r.parent_id and r.parent_id in nodes:
+            nodes[r.parent_id]['children'].append(nodes[r.id])
+        else:
+            root.append(nodes[r.id])
+    return root
+
+
+@app.get('/api/xbrl/statements/{statement_id}/lines/tree')
+def api_statement_tree(statement_id: int, db=Depends(get_db)):
+    tree = _build_tree(db, statement_id)
+    return tree
+
+
+@app.post('/api/xbrl/lines')
+def api_create_line(item: CanonicalLineCreate, db=Depends(get_db)):
+    # require that statement exists (user requested manual creation prior)
+    stmt = db.query(FinancialStatement).get(item.statement_id)
+    if not stmt:
+        raise HTTPException(status_code=400, detail='FinancialStatement not found')
+    line = CanonicalLine(code=item.code, name=item.name, statement_id=item.statement_id, parent_id=item.parent_id, order=item.order)
+    # map metadata field if provided
+    if item.metadata is not None:
+        # attribute name on model is 'meta'
+        line.meta = item.metadata
+    db.add(line)
+    try:
+        db.commit()
+        db.refresh(line)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    return CanonicalLineResponse.from_orm(line)
+
+
+@app.put('/api/xbrl/lines/{line_id}')
+def api_update_line(line_id: int, item: CanonicalLineCreate, db=Depends(get_db)):
+    line = db.query(CanonicalLine).get(line_id)
+    if not line:
+        raise HTTPException(status_code=404, detail='Line not found')
+    line.code = item.code
+    line.name = item.name
+    line.parent_id = item.parent_id
+    line.order = item.order
+    if item.metadata is not None:
+        line.meta = item.metadata
+    try:
+        db.commit()
+        db.refresh(line)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    return CanonicalLineResponse.from_orm(line)
+
+
+@app.delete('/api/xbrl/lines/{line_id}')
+def api_delete_line(line_id: int, db=Depends(get_db)):
+    line = db.query(CanonicalLine).get(line_id)
+    if not line:
+        raise HTTPException(status_code=404, detail='Line not found')
+    # prevent deletion if facts linked
+    linked = db.query(Fact).filter(Fact.canonical_line_id == line.id).first()
+    if linked:
+        raise HTTPException(status_code=400, detail='Cannot delete line with linked facts')
+    db.delete(line)
+    db.commit()
+    return {'ok': True}
+
+
+@app.patch('/api/xbrl/lines/{line_id}/move')
+def api_move_line(line_id: int, payload: dict, db=Depends(get_db)):
+    # payload expected: { new_parent_id: int|null, new_order: int }
+    new_parent_id = payload.get('new_parent_id')
+    new_order = payload.get('new_order')
+    if new_order is None:
+        raise HTTPException(status_code=400, detail='new_order is required')
+    line = db.query(CanonicalLine).get(line_id)
+    if not line:
+        raise HTTPException(status_code=404, detail='Line not found')
+
+    # If moving under a parent, ensure parent exists and same statement
+    if new_parent_id is not None:
+        parent = db.query(CanonicalLine).get(new_parent_id)
+        if not parent:
+            raise HTTPException(status_code=400, detail='New parent not found')
+        if parent.statement_id != line.statement_id:
+            raise HTTPException(status_code=400, detail='Cannot move across statements')
+        # Prevent cycles: walk ancestors of parent to ensure none equals line
+        cur = parent
+        while cur is not None:
+            if cur.id == line.id:
+                raise HTTPException(status_code=400, detail='Invalid move: would create cycle')
+            cur = cur.parent
+
+    # apply new parent
+    line.parent_id = new_parent_id
+
+    # rebuild sibling order under new_parent
+    siblings = db.query(CanonicalLine).filter(
+        CanonicalLine.statement_id == line.statement_id,
+        CanonicalLine.parent_id == new_parent_id,
+        CanonicalLine.id != line.id,
+    ).order_by(CanonicalLine.order.nullsfirst(), CanonicalLine.id).all()
+
+    insert_index = max(0, int(new_order) - 1)
+    # build new ordered list
+    ordered = []
+    for i, s in enumerate(siblings):
+        ordered.append(s)
+    if insert_index >= len(ordered):
+        ordered.append(line)
+    else:
+        ordered.insert(insert_index, line)
+
+    # reassign orders sequentially starting at 1
+    for idx, node in enumerate(ordered, start=1):
+        node.order = idx
+
+    try:
+        db.commit()
+        db.refresh(line)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return CanonicalLineResponse.from_orm(line)
 
 
 def get_current_user(
@@ -607,64 +846,8 @@ def home(
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
         return response
-    
-    # Estadísticas para el dashboard
-    total_entidades = db.query(Entity).count()
-    total_archivos = db.query(FileModel).count()
-    total_hechos = db.query(Fact).count()
-    
-    # Archivos recientes
-    archivos_recientes_query = (
-        db.query(
-            FileModel.filename,
-            FileModel.taxonomy,
-            FileModel.created_at,
-            Entity.name.label("entidad"),
-            Period.start.label("period_start"),
-            Period.end.label("period_end"),
-        )
-        .outerjoin(Entity, FileModel.entity)
-        .outerjoin(Period, FileModel.period)
-        .order_by(FileModel.created_at.desc())
-        .limit(5)
-        .all()
-    )
-    
-    archivos_recientes = []
-    for archivo in archivos_recientes_query:
-        periodo = _format_period(archivo.period_start, archivo.period_end)
-        # Contar hechos por archivo
-        total_hechos_archivo = db.query(Fact).filter(Fact.file_id == FileModel.id).count() if hasattr(archivo, 'id') else 0
-        archivos_recientes.append({
-            "filename": archivo.filename,
-            "entidad": archivo.entidad or "N/A",
-            "periodo": periodo,
-            "taxonomy": archivo.taxonomy,
-            "total_hechos": total_hechos_archivo,
-            "created_at": archivo.created_at.strftime("%Y-%m-%d %H:%M") if archivo.created_at else "N/A",
-        })
-    
-    stats = {
-        "total_entidades": total_entidades,
-        "total_archivos": total_archivos,
-        "total_hechos": total_hechos,
-        "alertas_activas": 0,
-        "nuevas_entidades": 0,
-        "archivos_mes": 0,
-    }
-    
-    response = TEMPLATES.TemplateResponse(
-        "dashboard.html",
-        {
-            "request": request,
-            "active_page": "dashboard",
-            "stats": stats,
-            "archivos_recientes": archivos_recientes,
-            "archivos_por_mes": [0] * 12,
-            "sectores_labels": ["Bancos", "Seguros", "Otros"],
-            "sectores_data": [40, 35, 25],
-        },
-    )
+    # Redirigir al dashboard centralizado
+    response = RedirectResponse(url="/dashboard", status_code=303)
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
@@ -1877,45 +2060,105 @@ def dashboard_page(
     total_entidades = db.query(Entity).count()
     total_archivos = db.query(FileModel).count()
     total_hechos = db.query(Fact).count()
-
-    # Archivos recientes
-    archivos_recientes_query = (
-        db.query(
-            FileModel.filename,
-            FileModel.taxonomy,
-            FileModel.created_at,
-            Entity.name.label("entidad"),
-            Period.start.label("period_start"),
-            Period.end.label("period_end"),
-        )
-        .outerjoin(Entity, FileModel.entity)
-        .outerjoin(Period, FileModel.period)
+    # Archivos recientes: traer objetos File con entidad y periodo
+    recent_files = (
+        db.query(FileModel)
+        .options()
+        .outerjoin(Entity)
+        .outerjoin(Period)
         .order_by(FileModel.created_at.desc())
         .limit(5)
         .all()
     )
 
     archivos_recientes = []
-    for archivo in archivos_recientes_query:
-        periodo = _format_period(archivo.period_start, archivo.period_end)
-        total_hechos_archivo = db.query(Fact).filter(Fact.file_id == FileModel.id).count() if hasattr(archivo, 'id') else 0
+    # Para evitar N+1, precompute counts per file id
+    file_ids = [f.id for f in recent_files]
+    facts_counts = {}
+    if file_ids:
+        rows = db.query(Fact.file_id, func.count(Fact.id)).filter(Fact.file_id.in_(file_ids)).group_by(Fact.file_id).all()
+        facts_counts = {r[0]: r[1] for r in rows}
+
+    for f in recent_files:
+        periodo = _format_period(getattr(f.period, 'start', None), getattr(f.period, 'end', None))
         archivos_recientes.append({
-            "filename": archivo.filename,
-            "entidad": archivo.entidad or "N/A",
+            "filename": f.filename,
+            "entidad": f.entity.name if f.entity else "N/A",
             "periodo": periodo,
-            "taxonomy": archivo.taxonomy,
-            "total_hechos": total_hechos_archivo,
-            "created_at": archivo.created_at.strftime("%Y-%m-%d %H:%M") if archivo.created_at else "N/A",
+            "taxonomy": f.taxonomy,
+            "total_hechos": int(facts_counts.get(f.id, 0)),
+            "created_at": f.created_at.strftime("%Y-%m-%d %H:%M") if f.created_at else "N/A",
         })
+
+    # Alertas activas: contar archivos con warnings no nulos
+    alertas_activas = db.query(FileModel).filter(FileModel.warnings != None).count()
+
+    # Nuevas entidades (últimos 30 días)
+    from datetime import datetime, timedelta
+    dias_nuevas = 30
+    desde = datetime.utcnow() - timedelta(days=dias_nuevas)
+    nuevas_entidades = db.query(Entity).filter(Entity.created_at >= desde).count()
 
     stats = {
         "total_entidades": total_entidades,
         "total_archivos": total_archivos,
         "total_hechos": total_hechos,
-        "alertas_activas": 0,
-        "nuevas_entidades": 0,
-        "archivos_mes": 0,
+        "alertas_activas": alertas_activas,
+        "nuevas_entidades": nuevas_entidades,
     }
+
+    # Archivos por mes: últimos 12 meses relativos (evita dependencias de funciones DB)
+    from datetime import datetime
+    now = datetime.utcnow()
+    archivos_por_mes = []
+    archivos_month_labels = []
+    # helper to get first day of month
+    def _first_of_month(y, m):
+        return datetime(y, m, 1)
+
+    def _add_month(y, m, delta):
+        # add delta months to year/month
+        total = y * 12 + (m - 1) + delta
+        ny = total // 12
+        nm = (total % 12) + 1
+        return ny, nm
+
+    # Build months from oldest to newest (11 months ago .. current)
+    for i in range(11, -1, -1):
+        y, mo = _add_month(now.year, now.month, -i)
+        start = _first_of_month(y, mo)
+        ny, nm = _add_month(y, mo, 1)
+        end = _first_of_month(ny, nm)
+        try:
+            cnt = db.query(FileModel).filter(FileModel.created_at >= start, FileModel.created_at < end).count()
+        except Exception:
+            cnt = 0
+        archivos_por_mes.append(int(cnt))
+        # etiquetas en español abreviadas y año corto (p.ej. Dic/24)
+        meses_es = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"]
+        year_short = str(y)[2:]
+        archivos_month_labels.append(f"{meses_es[mo - 1]}/{year_short}")
+
+    # Distribución de entidades por sector (top 5)
+    sectores_labels = []
+    sectores_data = []
+    try:
+        # Usar COALESCE para agrupar valores NULL como 'Sin sector'
+        sec_label = func.coalesce(Entity.sector, 'Sin sector')
+        sec_rows = (
+            db.query(sec_label.label('sector'), func.count(Entity.id))
+            .group_by(sec_label)
+            .order_by(func.count(Entity.id).desc())
+            .limit(5)
+            .all()
+        )
+        for s in sec_rows:
+            sectores_labels.append(s[0])
+            sectores_data.append(int(s[1]))
+    except Exception:
+        # fallback: some default
+        sectores_labels = ["Bancos", "Seguros", "Otros"]
+        sectores_data = [40, 35, 25]
 
     response = TEMPLATES.TemplateResponse(
         "dashboard.html",
@@ -1924,9 +2167,10 @@ def dashboard_page(
             "active_page": "dashboard",
             "stats": stats,
             "archivos_recientes": archivos_recientes,
-            "archivos_por_mes": [0] * 12,
-            "sectores_labels": ["Bancos", "Seguros", "Otros"],
-            "sectores_data": [40, 35, 25],
+                "archivos_por_mes": archivos_por_mes,
+                "archivos_month_labels": archivos_month_labels,
+                "sectores_labels": sectores_labels,
+                "sectores_data": sectores_data,
         },
     )
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
@@ -2171,6 +2415,19 @@ def upload_xbrl(
                 return HTMLResponse(f"Error leyendo XBRL: {exc}")
             raise HTTPException(status_code=400, detail=f"Error leyendo XBRL: {exc}")
 
+        # Guardar una copia del archivo XBRL en la carpeta `uploads/` del proyecto
+        stored_path = None
+        try:
+            uploads_dir = BASE_DIR.parent / "uploads"
+            uploads_dir.mkdir(parents=True, exist_ok=True)
+            dest_name = f"{uuid.uuid4().hex}_{Path(xbrl.filename).name}"
+            dest_path = uploads_dir / dest_name
+            shutil.copy(str(tmp_path), str(dest_path))
+            stored_path = str(dest_path)
+        except Exception:
+            # No impedir la ingestión si falla el guardado físico; registrar y continuar
+            logger.exception("No se pudo guardar copia del XBRL en uploads/")
+
         tmp_path.unlink(missing_ok=True)
 
         facts = parsed.get("facts", [])
@@ -2212,7 +2469,7 @@ def upload_xbrl(
             currency=currency,
             entity_id=entity.id,
             period_id=period_obj.id if period_obj else None,
-            warnings=None,
+            warnings={"stored_path": stored_path} if stored_path else None,
         )
         db.add(file_row)
         db.flush()
@@ -2320,14 +2577,26 @@ def entidades_create(
     name: str = Form(...),
     nit: Optional[str] = Form(None),
     sector: Optional[str] = Form(None),
-    type: Optional[str] = Form(None),
+    entity_type: Optional[str] = Form(None),
+    code: Optional[str] = Form(None),
+    delegatura: Optional[str] = Form(None),
+    short_name: Optional[str] = Form(None),
     is_active: Optional[str] = Form("1"),
     db = Depends(get_db),
     background_tasks: BackgroundTasks = None,
     current_user: Optional[dict] = Depends(get_current_user),
     permission_ok: bool = Depends(require_permission('entities.manage')),
 ):
-    ent = Entity(name=name, nit=nit or None, sector=sector, type=type, is_active=(is_active not in ("0", "false", "False")))
+    ent = Entity(
+        name=name,
+        nit=nit or None,
+        sector=sector,
+        entity_type=entity_type,
+        code=code,
+        delegatura=delegatura,
+        short_name=short_name,
+        is_active=(is_active not in ("0", "false", "False")),
+    )
     db.add(ent)
     try:
         db.commit()
@@ -2357,7 +2626,10 @@ def entidades_edit(entity_id: int,
                    name: str = Form(...),
                    nit: Optional[str] = Form(None),
                    sector: Optional[str] = Form(None),
-                   type: Optional[str] = Form(None),
+                   entity_type: Optional[str] = Form(None),
+                   code: Optional[str] = Form(None),
+                   delegatura: Optional[str] = Form(None),
+                   short_name: Optional[str] = Form(None),
                    is_active: Optional[str] = Form("1"),
                    db = Depends(get_db),
                    background_tasks: BackgroundTasks = None,
@@ -2369,7 +2641,10 @@ def entidades_edit(entity_id: int,
     ent.name = name
     ent.nit = nit or None
     ent.sector = sector
-    ent.type = type
+    ent.entity_type = entity_type
+    ent.code = code
+    ent.delegatura = delegatura
+    ent.short_name = short_name
     ent.is_active = (is_active not in ("0", "false", "False"))
     db.add(ent)
     try:

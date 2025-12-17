@@ -43,8 +43,23 @@
         </div>
 
         <div>
-          <label for="type">Tipo</label>
-          <input id="type" name="type" type="text" value="{{ entity.type if entity else '' }}" placeholder="Privada / Pública / Otra" />
+          <label for="code">Código</label>
+          <input id="code" name="code" type="text" value="{{ entity.code if entity else '' }}" placeholder="Código interno" />
+        </div>
+
+        <div>
+          <label for="entity_type">Tipo</label>
+          <input id="entity_type" name="entity_type" type="text" value="{{ entity.entity_type if entity else '' }}" placeholder="Privada / Pública / Otra" />
+        </div>
+
+        <div>
+          <label for="short_name">Denominación abreviada</label>
+          <input id="short_name" name="short_name" type="text" value="{{ entity.short_name if entity else '' }}" placeholder="Nombre corto" />
+        </div>
+
+        <div style="grid-column:1 / -1;">
+          <label for="delegatura">Denominación / Delegatura competente</label>
+          <input id="delegatura" name="delegatura" type="text" value="{{ entity.delegatura if entity else '' }}" placeholder="Denominación social o delegatura" />
         </div>
 
         <div style="grid-column:1 / -1; display:flex; justify-content:flex-end;">

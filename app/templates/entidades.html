@@ -37,7 +37,11 @@
         <thead>
           <tr>
             <th>ID</th>
+            <th>Tipo</th>
+            <th>Código</th>
             <th>Nombre</th>
+            <th>Denominación abreviada</th>
+            <th>Delegatura competente</th>
             <th>Identificador (NIT/RUC)</th>
             <th>Sector</th>
             <th style="text-align: center;">Archivos</th>
@@ -49,9 +53,13 @@
             {% for entity in entities %}
             <tr>
               <td>{{ entity.id }}</td>
+              <td>{{ entity.entity_type or '' }}</td>
+              <td>{{ entity.code or '' }}</td>
               <td>
                 <span style="font-weight: 500;">{{ entity.name }}</span>
               </td>
+              <td>{{ entity.short_name or '' }}</td>
+              <td>{{ entity.delegatura or '' }}</td>
               <td>
                 <code style="font-size: 0.85rem; background: var(--corvus-bg-dark); padding: 0.15rem 0.5rem; border-radius: 4px;">
                   {{ entity.nit or '' }}
@@ -74,7 +82,7 @@
             {% endfor %}
           {% else %}
             <tr>
-              <td colspan="6" style="text-align: center; padding: 3rem;">
+              <td colspan="10" style="text-align: center; padding: 3rem;">
                 <div style="color: var(--corvus-text-muted);">
                   <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" style="margin-bottom: 1rem; opacity: 0.5;">
                     <path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>

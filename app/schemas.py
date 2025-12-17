@@ -37,3 +37,60 @@ class FileResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class FinancialStatementCreate(BaseModel):
+    code: str
+    name: str
+    type: str
+
+
+class FinancialStatementResponse(BaseModel):
+    id: int
+    code: str
+    name: str
+    type: str
+
+    class Config:
+        from_attributes = True
+
+
+class CanonicalLineCreate(BaseModel):
+    code: str
+    name: str
+    statement_id: int
+    parent_id: Optional[int] = None
+    order: Optional[int] = None
+    metadata: Optional[dict] = None
+
+
+class CanonicalLineResponse(BaseModel):
+    id: int
+    code: str
+    name: str
+    statement_id: int
+    parent_id: Optional[int]
+    order: Optional[int]
+    metadata: Optional[dict]
+
+    class Config:
+        from_attributes = True
+
+
+class CanonicalLineTree(BaseModel):
+    id: int
+    code: str
+    name: str
+    order: Optional[int]
+    children: List["CanonicalLineTree"] = []
+
+    class Config:
+        from_attributes = True
+
+# Forward reference update
+CanonicalLineTree.update_forward_refs()
+
+
+class MoveLineRequest(BaseModel):
+    new_parent_id: Optional[int] = None
+    new_order: int

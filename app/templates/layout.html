@@ -105,6 +105,14 @@
               </a>
             </li>
             <li class="sidebar-menu-item">
+              <a href="/xbrl/canonical" class="sidebar-menu-link {% if active_page == 'canonical' %}active{% endif %}">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7h6v6H3V7zm8 0h10v10H11V7zM3 15h6v6H3v-6z" />
+                </svg>
+                Estados Financieros
+              </a>
+            </li>
+            <li class="sidebar-menu-item">
               <a href="/archivos" class="sidebar-menu-link {% if active_page == 'archivos' %}active{% endif %}">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
@@ -258,14 +266,15 @@
           <span class="badge">3</span>
         </button>
         
+        {% set current_user = get_current_user(request) %}
         <div class="header-user" x-data="{ open: false }" @click.away="open = false">
           <div class="header-user-trigger" @click="open = !open" style="cursor: pointer;">
             <div class="header-user-avatar">
-              {{ current_user.initials if current_user else 'US' }}
+              {{ current_user.initials if current_user and current_user.initials else 'US' }}
             </div>
             <div class="header-user-info">
-              <span class="header-user-name">{{ current_user.name if current_user else 'Usuario' }}</span>
-              <span class="header-user-role">{{ current_user.role if current_user else 'Analista' }}</span>
+              <span class="header-user-name">{{ current_user.name if current_user and current_user.name else 'Usuario' }}</span>
+              <span class="header-user-role">{{ current_user.role if current_user and current_user.role else 'Analista' }}</span>
             </div>
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" style="width: 16px; height: 16px; margin-left: 8px;">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />

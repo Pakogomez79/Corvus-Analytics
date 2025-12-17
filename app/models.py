@@ -27,7 +27,8 @@ class Entity(Base):
     name = Column(String(255), nullable=False)
     nit = Column(String(50), nullable=True, unique=True)
     sector = Column(String(100), nullable=True)
-    type = Column(String(50), nullable=True)
+    # map the Python attribute `entity_type` to the existing DB column named `type`
+    entity_type = Column('type', String(50), nullable=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -78,7 +79,44 @@ class Fact(Base):
     currency = Column(String(10), nullable=True)
     dimensions = Column(JSON, nullable=True)
 
+    # Optional FK to a canonical line (normalized, hierarchical line)
+    canonical_line_id = Column(Integer, ForeignKey("canonical_lines.id"), nullable=True)
+
     file = relationship("File", back_populates="facts")
+    canonical_line = relationship("CanonicalLine", back_populates="facts")
+
+
+class FinancialStatement(Base):
+    __tablename__ = "financial_statements"
+
+    id = Column(Integer, primary_key=True)
+    code = Column(String(100), unique=True, nullable=False)
+    name = Column(String(255), nullable=False)
+    type = Column(String(50), nullable=False)  # e.g., BalanceGeneral, EstadoResultados, FlujoEfectivo, CambiosPatrimonio
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    lines = relationship("CanonicalLine", back_populates="statement", cascade="all, delete-orphan")
+
+
+class CanonicalLine(Base):
+    __tablename__ = "canonical_lines"
+
+    id = Column(Integer, primary_key=True)
+    code = Column(String(100), nullable=False)
+    name = Column(String(255), nullable=False)
+    statement_id = Column(Integer, ForeignKey("financial_statements.id"), nullable=False)
+    parent_id = Column(Integer, ForeignKey("canonical_lines.id"), nullable=True)
+    order = Column(Integer, nullable=True)
+    # 'metadata' es nombre reservado en Declarative API; usar atributo 'meta' mapeado a columna 'metadata'
+    meta = Column('metadata', JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    statement = relationship("FinancialStatement", back_populates="lines")
+    parent = relationship("CanonicalLine", remote_side=[id], back_populates="children")
+    children = relationship("CanonicalLine", back_populates="parent", cascade="all, delete-orphan")
+    facts = relationship("Fact", back_populates="canonical_line")
 
 
 class User(Base):

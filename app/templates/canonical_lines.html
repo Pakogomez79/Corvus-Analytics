@@ -1,0 +1,220 @@
+{% extends "layout.html" %}
+
+{% block title %}Estados Financieros - Corvus{% endblock %}
+{% block page_title %}Estados Financieros{% endblock %}
+{% block breadcrumb %}XBRL &gt; Estados Financieros{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <div>
+      <h3 class="card-title">Estados Financieros</h3>
+      <p class="card-subtitle">Gestione la estructura jerárquica de líneas canónicas</p>
+    </div>
+    <div style="margin-left:auto; display:flex; gap:0.5rem; align-items:center;">
+      <button id="btn-expand" class="btn">Expandir todo</button>
+      <button id="btn-collapse" class="btn">Contraer todo</button>
+    </div>
+  </div>
+  <div class="card-body">
+
+    <div style="display:flex; gap:1.5rem; align-items:flex-start;">
+      <div style="flex: 0 0 360px;">
+        <div style="margin-bottom:1rem;">
+          <form id="stmt-form" class="form-inline">
+            <div class="stmt-form-row">
+              <input class="canonical-input code" type="text" name="code" placeholder="Código" required>
+              <input class="canonical-input name" type="text" name="name" placeholder="Nombre" required>
+            </div>
+            <div style="display:flex; gap:0.5rem; margin-top:0.5rem;">
+              <select class="canonical-input" name="type">
+                <option value="BalanceGeneral">Balance General</option>
+                <option value="EstadoResultados">Estado de Resultados</option>
+                <option value="FlujoEfectivo">Flujo de Efectivo</option>
+                <option value="CambiosPatrimonio">Cambios en Patrimonio</option>
+              </select>
+              <button class="btn btn-primary" type="submit">Crear Estado</button>
+            </div>
+          </form>
+        </div>
+
+        <div>
+          <label for="stmt-select">Seleccionar estado</label>
+          <select id="stmt-select" class="canonical-input" style="width:100%; margin-top:0.5rem;">
+            <option value="">-- seleccionar --</option>
+            {% for s in statements %}
+              <option value="{{ s.id }}">{{ s.code }} - {{ s.name }}</option>
+            {% endfor %}
+          </select>
+          <div style="margin-top:0.5rem; display:flex; gap:0.5rem;">
+            <button id="load-tree" class="btn btn-primary">Cargar árbol</button>
+            <button id="import-csv" class="btn">Importar CSV</button>
+          </div>
+        </div>
+      </div>
+
+      <div style="flex:1; display:flex; flex-direction:column; gap:0.75rem;">
+        <div class="card" style="padding:0.75rem;">
+          <div class="card-body" id="tree-root" style="min-height:340px; display:flex; align-items:flex-start; justify-content:center;">Seleccione un estado y presione "Cargar árbol"</div>
+        </div>
+
+        <!-- footer: create line left inputs, button right -->
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:1rem;">
+          <form id="line-form" class="form-inline" style="display:flex; gap:0.5rem; align-items:center; width:100%;">
+            <div class="line-form-left" style="flex:1;">
+              <input class="canonical-input small" type="text" name="code" placeholder="Código" required>
+              <input class="canonical-input wide" type="text" name="name" placeholder="Nombre" required>
+              <input class="canonical-input small" type="number" name="order" placeholder="Orden">
+              <input class="canonical-input small" type="text" name="parent_id" placeholder="Parent ID (opcional)">
+              <input type="hidden" name="statement_id" id="line-stmt-id">
+            </div>
+          </form>
+
+          <div style="display:flex; align-items:center;">
+            <button id="create-line-btn" class="btn btn-accent" style="padding:0.6rem 1rem;">Crear línea</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// Ajustes visuales de inputs para coincidir con otras pantallas
+(function(){
+  const style = document.createElement('style');
+  style.innerHTML = `
+    .canonical-input { height: 44px; border-radius: 8px; padding: 0.5rem 0.75rem; border: 1px solid #e6edf2; }
+    .line-form-left { display:flex; gap:0.5rem; align-items:center; }
+    .line-form-left .wide { flex: 1 1 60%; }
+    .line-form-left .small { width: 120px; }
+    .stmt-form-row { display:flex; gap:0.5rem; align-items:center; }
+    .stmt-form-row .code { width: 220px; }
+    .stmt-form-row .name { flex: 1 1 auto; }
+  `;
+  document.head.appendChild(style);
+})();
+// Render tree into nested UL/LI with data attributes and drag handles
+function renderTree(nodes){
+  if(!nodes || nodes.length === 0) return '<em>(vacío)</em>';
+  function makeList(list){
+    const ul = document.createElement('ul');
+    ul.classList.add('sortable-list');
+    list.forEach(n => {
+      const li = document.createElement('li');
+      li.dataset.id = n.id;
+      li.dataset.code = n.code;
+      li.dataset.name = n.name;
+      li.innerHTML = `<span class="drag-handle" style="cursor:grab;margin-right:8px">≡</span><strong>${n.code}</strong> - <span class="name">${n.name}</span> <small>${n.order?('(ord:'+n.order+')':'')}</small> <span class="actions" style="margin-left:8px"><button class="btn-edit">✎</button> <button class="btn-add">+</button> <button class="btn-del">🗑</button></span>`;
+      if(n.children && n.children.length){
+        li.appendChild(makeList(n.children));
+      }
+      ul.appendChild(li);
+    });
+    return ul;
+  }
+  const container = makeList(nodes);
+  return container;
+}
+
+// Initialize Sortable on all lists and wire callbacks
+function initSortables(){
+  document.querySelectorAll('.sortable-list').forEach(el => {
+    if(el._sortable) return; // already initialized
+    const s = Sortable.create(el, {
+      group: 'nested',
+      handle: '.drag-handle',
+      animation: 150,
+      fallbackOnBody: true,
+      swapThreshold: 0.65,
+      onEnd: async function(evt){
+        const li = evt.item;
+        const movedId = parseInt(li.dataset.id);
+        // determine new parent id: closest parent LI of this UL
+        const parentUl = li.parentElement;
+        let newParentId = null;
+        const parentLi = parentUl.closest('li');
+        if(parentLi) newParentId = parseInt(parentLi.dataset.id);
+        // compute new order (1-based index among siblings)
+        const siblings = Array.from(parentUl.children).filter(ch => ch.nodeType===1);
+        const newOrder = siblings.indexOf(li) + 1;
+        try{
+          const res = await fetch(`/api/xbrl/lines/${movedId}/move`, {
+            method: 'PATCH', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ new_parent_id: newParentId, new_order: newOrder })
+          });
+          if(!res.ok){
+            const txt = await res.text();
+            alert('Error moviendo nodo: '+txt);
+            document.getElementById('load-tree').click();
+          }
+        }catch(err){
+          alert('Error comunicando con servidor');
+          document.getElementById('load-tree').click();
+        }
+      }
+    });
+    el._sortable = s;
+  });
+}
+
+document.getElementById('load-tree').addEventListener('click', async function(){
+  const sel = document.getElementById('stmt-select');
+  const id = sel.value;
+  if(!id) return alert('Seleccione un estado');
+  document.getElementById('line-stmt-id').value = id;
+  const resp = await fetch(`/api/xbrl/statements/${id}/lines/tree`);
+  if(!resp.ok) return alert('Error cargando árbol');
+  const tree = await resp.json();
+  const container = document.getElementById('tree-root');
+  container.innerHTML = '';
+  const treeDom = renderTree(tree);
+  if(typeof treeDom === 'string') container.innerHTML = treeDom;
+  else container.appendChild(treeDom);
+  // load SortableJS and init
+  if(typeof Sortable === 'undefined'){
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js';
+    s.onload = () => initSortables();
+    document.body.appendChild(s);
+  } else {
+    initSortables();
+  }
+});
+
+// Create statement
+document.getElementById('stmt-form').addEventListener('submit', async function(e){
+  e.preventDefault();
+  const form = e.target;
+  const data = { code: form.code.value, name: form.name.value, type: form.type.value };
+  const res = await fetch('/api/xbrl/statements', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data)});
+  if(!res.ok){ alert('Error creando estado'); return; }
+  alert('Estado creado');
+  location.reload();
+});
+
+// Create line (button triggers form submit)
+document.getElementById('create-line-btn').addEventListener('click', async function(e){
+  const form = document.getElementById('line-form');
+  const stmtId = document.getElementById('line-stmt-id').value;
+  if(!stmtId) return alert('Seleccione un estado primero');
+  const data = {
+    code: form.code.value,
+    name: form.name.value,
+    statement_id: parseInt(stmtId),
+    parent_id: form.parent_id.value ? parseInt(form.parent_id.value) : null,
+    order: form.order.value ? parseInt(form.order.value) : null,
+  };
+  const res = await fetch('/api/xbrl/lines', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data)});
+  if(!res.ok){ alert('Error creando línea'); return; }
+  // clear inputs
+  form.code.value = '';
+  form.name.value = '';
+  form.order.value = '';
+  form.parent_id.value = '';
+  document.getElementById('load-tree').click();
+});
+</script>
+
+{% endblock %}
